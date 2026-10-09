@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIM Learning Dashboard: Leeza SOHO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #38bdf8; cursor: pointer; margin-top: -6px; box-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #334155; border-radius: 2px; }
+        
+        .metric-card { background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; }
+        
+        /* Learning Tooltip CSS */
+        .tooltip { visibility: hidden; width: max-content; max-width: 260px; background-color: #1e293b; color: #cbd5e1; text-align: left; border-radius: 8px; padding: 12px; position: absolute; z-index: 50; top: 120%; left: 50%; transform: translateX(-50%); opacity: 0; transition: opacity 0.3s; font-size: 0.75rem; border: 1px solid #475569; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7); line-height: 1.5; }
+        .has-tooltip:hover .tooltip { visibility: visible; opacity: 1; }
+        .tooltip::after { content: ""; position: absolute; bottom: 100%; left: 50%; margin-left: -6px; border-width: 6px; border-style: solid; border-color: transparent transparent #475569 transparent; }
+        
+        #bim-viewer { width: 100%; height: 100%; min-height: 400px; border-radius: 0.75rem; overflow: hidden; background: #000; }
+        .transition-width { transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.5s ease; }
+    </style>
+</head>
+<body class="h-screen overflow-hidden flex flex-col md:flex-row">
+
+    <!-- Navbar / Header (Spans full width in column layout before row splitting visually) -->
+    <div class="fixed top-0 left-0 w-full bg-slate-900 border-b border-slate-800 z-50 px-6 py-4 flex justify-between items-center shadow-lg">
+        <div class="flex items-center gap-4">
+            <h1 class="text-xl font-bold tracking-tight text-white">Leeza SOHO <span class="text-blue-400">BIM Analytics</span></h1>
+            <span class="bg-indigo-500/20 text-indigo-300 text-xs px-2 py-1 rounded border border-indigo-500/30">Learning Platform Active</span>
+        </div>
+        
+        <!-- BIM Plugins Dropdown -->
+        <div class="relative group">
+            <button class="bg-slate-800 hover:bg-slate-700 text-sm text-slate-200 px-4 py-2 rounded-lg border border-slate-700 transition flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                Active Plugins
+            </button>
+            <div class="absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
+                <ul class="py-2 text-sm text-slate-300">
+                    <li class="px-4 py-2 hover:bg-slate-700 cursor-pointer flex items-center justify-between">EnergyPlus Link <span class="w-2 h-2 rounded-full bg-green-500"></span></li>
+                    <li class="px-4 py-2 hover:bg-slate-700 cursor-pointer flex items-center justify-between">Radiance Daylighting <span class="w-2 h-2 rounded-full bg-green-500"></span></li>
+                    <li class="px-4 py-2 hover:bg-slate-700 cursor-pointer flex items-center justify-between text-slate-500">Clash Detection <span class="w-2 h-2 rounded-full bg-slate-600"></span></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar: Climate Filters -->
+    <aside class="w-full md:w-80 bg-slate-900 border-r border-slate-800 p-6 pt-24 flex flex-col h-full overflow-y-auto z-10 relative">
+        
+        <div class="mb-6">
+            <h2 class="text-xs font-bold text-slate-400 tracking-wider uppercase mb-3 flex items-center gap-2">
+                Climate Filter Presets
+                <div class="relative has-tooltip inline-flex text-blue-400 cursor-help">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <div class="tooltip"><strong class="text-white block mb-1">What is a Climate Preset?</strong> Pre-configured environmental variables that reflect specific global climates to see how the building envelope responds under different extremes.</div>
+                </div>
+            </h2>
+            <div class="grid grid-cols-3 gap-2 mb-6">
+                <button onclick="setClimate('arid')" class="bg-slate-800 hover:bg-amber-900/40 text-xs py-2 rounded border border-slate-700 transition">Arid</button>
+                <button onclick="setClimate('tropical')" class="bg-slate-800 hover:bg-teal-900/40 text-xs py-2 rounded border border-slate-700 transition">Tropical</button>
+                <button onclick="setClimate('temperate')" class="bg-slate-800 hover:bg-blue-900/40 text-xs py-2 rounded border border-slate-700 transition">Temperate</button>
+            </div>
+        </div>
+
+        <div class="space-y-6 flex-1 border-t border-slate-800 pt-6">
+            <div class="space-y-2">
+                <div class="flex justify-between text-sm">
+                    <label class="text-slate-300 font-medium">External Temp (°C)</label>
+                    <span id="val-temp" class="text-blue-400 font-mono font-semibold">28.0</span>
+                </div>
+                <input type="range" id="in-temp" min="-10" max="50" step="0.5" value="28">
+            </div>
+
+            <div class="space-y-2 relative has-tooltip">
+                <div class="flex justify-between text-sm">
+                    <label class="text-slate-300 font-medium border-b border-dashed border-slate-500 cursor-help">Solar Radiation (W/m²)</label>
+                    <span id="val-rad" class="text-amber-400 font-mono font-semibold">800</span>
+                </div>
+                <input type="range" id="in-rad" min="0" max="1200" step="10" value="800">
+                <div class="tooltip"><strong class="text-white block mb-1">Solar Radiation</strong> The power per unit area received from the Sun. High radiation increases solar heat gain and daylighting, but can cause glare and overheating.</div>
+            </div>
+
+            <div class="space-y-2">
+                <div class="flex justify-between text-sm">
+                    <label class="text-slate-300 font-medium">Cloud Cover (%)</label>
+                    <span id="val-cloud" class="text-slate-300 font-mono font-semibold">20</span>
+                </div>
+                <input type="range" id="in-cloud" min="0" max="100" step="1" value="20">
+            </div>
+
+            <div class="space-y-2">
+                <div class="flex justify-between text-sm">
+                    <label class="text-slate-300 font-medium">Wind Speed (m/s)</label>
+                    <span id="val-wind" class="text-teal-400 font-mono font-semibold">1.5</span>
+                </div>
+                <input type="range" id="in-wind" min="0" max="20" step="0.5" value="1.5">
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Dashboard Area -->
+    <main class="flex-1 bg-slate-950 flex flex-col h-full overflow-y-auto pt-20 p-6">
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 h-full">
+            
+            <!-- 3D BIM Viewer Column -->
+            <section class="flex flex-col h-[500px] xl:h-full metric-card p-2 rounded-xl relative border-blue-900/50">
+                <div class="absolute top-4 left-4 z-10 bg-slate-900/80 p-2 rounded border border-slate-700 backdrop-blur text-xs text-slate-300">
+                    Interactive BIM Model (Three.js WebGL)
+                    <br><span class="text-[10px] text-slate-500">Drag to rotate, Scroll to zoom</span>
+                </div>
+                <div id="bim-viewer"></div>
+            </section>
+
+            <!-- Learning & Analytics Column -->
+            <section class="flex flex-col gap-6">
+                <!-- Zone 3: Thermal Comfort (Learning Enhanced) -->
+                <div class="metric-card rounded-xl p-6 flex flex-col">
+                    <h2 class="text-xs font-bold text-slate-400 tracking-wider uppercase mb-6 flex items-center gap-2 border-b border-slate-800 pb-2">
+                        Indoor Environmental Quality (IEQ)
+                    </h2>
+                    
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="relative has-tooltip">
+                            <span class="text-sm text-slate-300 font-medium border-b border-dashed border-slate-500 cursor-help">Operative Temp</span>
+                            <div class="flex items-baseline gap-2 mt-2">
+                                <span id="out-op-temp" class="text-3xl font-mono font-bold text-green-400">24.2°C</span>
+                            </div>
+                            <div class="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mt-3"><div id="bar-op-temp" class="h-full bg-green-500 transition-width" style="width: 50%;"></div></div>
+                            <div class="tooltip"><strong class="text-white block mb-1">Operative Temperature</strong> Combines air temperature and mean radiant temperature. It is a more accurate measure of human thermal comfort than just room air temp.</div>
+                        </div>
+
+                        <div class="relative has-tooltip">
+                            <span class="text-sm text-slate-300 font-medium border-b border-dashed border-slate-500 cursor-help">Daylight Autonomy</span>
+                            <div class="flex items-baseline gap-2 mt-2">
+                                <span id="out-da" class="text-3xl font-mono font-bold text-amber-400">75%</span>
+                            </div>
+                            <div class="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mt-3"><div id="bar-da" class="h-full bg-amber-400 transition-width" style="width: 75%;"></div></div>
+                            <div class="tooltip"><strong class="text-white block mb-1">Daylight Autonomy (DA)</strong> The percentage of annual daytime hours that a given point in a space is illuminated with natural light above a specified minimum threshold (usually 300 lux).</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Zone 4: Energy Demand -->
+                <div class="metric-card rounded-xl p-6 flex-1">
+                    <h2 class="text-xs font-bold text-slate-400 tracking-wider uppercase mb-6 flex items-center gap-2 border-b border-slate-800 pb-2">
+                        Energy Performance & Loads
+                    </h2>
+                    
+                    <div class="space-y-6">
+                        <div class="relative has-tooltip">
+                            <div class="flex justify-between items-end mb-2">
+                                <span class="text-sm text-slate-300 font-medium border-b border-dashed border-slate-500 cursor-help">HVAC Demand <span id="hvac-type" class="text-xs ml-1 text-slate-500">(Cooling)</span></span>
+                                <div class="flex items-baseline gap-1">
+                                    <span id="out-hvac" class="text-2xl font-mono font-bold text-blue-400">45.2</span><span class="text-xs text-slate-500">kW</span>
+                                </div>
+                            </div>
+                            <div class="h-2 w-full bg-slate-800 rounded-full overflow-hidden"><div id="bar-hvac" class="h-full bg-blue-500 transition-width" style="width: 45%;"></div></div>
+                            <div class="tooltip"><strong class="text-white block mb-1">HVAC Load</strong> The mechanical energy required to heat or cool the building to maintain the operative temperature within the comfort band (20°C - 24°C).</div>
+                        </div>
+
+                        <!-- Energy Efficiency Index -->
+                        <div class="pt-4 border-t border-slate-800 mt-4 relative has-tooltip">
+                            <span class="text-sm text-slate-300 font-medium border-b border-dashed border-slate-500 cursor-help block mb-3">Live Energy Use Intensity (EUI)</span>
+                            <div class="flex items-center gap-4">
+                                <div class="w-16 h-16 flex items-center justify-center bg-slate-800 rounded-lg border border-slate-600">
+                                    <span id="out-eei-grade" class="text-2xl font-bold text-green-400">B</span>
+                                </div>
+                                <div>
+                                    <div class="flex items-baseline gap-1">
+                                        <span id="out-eei-val" class="text-3xl font-mono font-bold text-white transition-all">112</span>
+                                        <span class="text-sm text-slate-400">kWh/m²/yr</span>
+                                    </div>
+                                    <div class="text-xs mt-1 text-slate-500">Global Target: < 100 kWh/m²/yr</div>
+                                </div>
+                            </div>
+                            <div class="tooltip"><strong class="text-white block mb-1">Energy Use Intensity (EUI)</strong> Represents the building's energy use as a function of its size or other characteristics. A lower number indicates a more efficient building.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        /* -----------------------------------------
+           1. THREE.JS 3D BIM MODEL INITIALIZATION 
+           ----------------------------------------- */
+        const container = document.getElementById('bim-viewer');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0f1a);
+
+        const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.set(0, 40, 90);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.5;
+
+        // Create a twisting architectural tower (Leeza SOHO abstraction)
+        const geometry = new THREE.CylinderGeometry(12, 16, 50, 24, 15);
+        const pos = geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+            const y = pos.getY(i);
+            const angle = y * 0.04; // Twist factor
+            const x = pos.getX(i);
+            const z = pos.getZ(i);
+            pos.setX(i, x * Math.cos(angle) - z * Math.sin(angle));
+            pos.setZ(i, x * Math.sin(angle) + z * Math.cos(angle));
+        }
+        geometry.computeVertexNormals();
+
+        const material = new THREE.MeshPhysicalMaterial({
+            color: 0x1e3a8a, metalness: 0.3, roughness: 0.1, transmission: 0.8, 
+            transparent: true, opacity: 0.8, side: THREE.DoubleSide
+        });
+        const tower = new THREE.Mesh(geometry, material);
+        scene.add(tower);
+
+        // Wireframe edges for structural look
+        const edges = new THREE.EdgesGeometry(geometry);
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x38bdf8, opacity: 0.3, transparent: true }));
+        scene.add(line);
+
+        // Core Atrium (Inner cylinder)
+        const coreGeo = new THREE.CylinderGeometry(4, 4, 52, 16);
+        const coreMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.8, roughness: 0.2 });
+        scene.add(new THREE.Mesh(coreGeo, coreMat));
+
+        // Lighting
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(50, 100, 50);
+        scene.add(dirLight);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        /* -----------------------------------------
+           2. BUILDING PHYSICS SIMULATION ENGINE 
+           ----------------------------------------- */
+        const inputs = {
+            temp: document.getElementById('in-temp'), rad: document.getElementById('in-rad'),
+            cloud: document.getElementById('in-cloud'), wind: document.getElementById('in-wind')
+        };
+        const displays = {
+            temp: document.getElementById('val-temp'), rad: document.getElementById('val-rad'),
+            cloud: document.getElementById('val-cloud'), wind: document.getElementById('val-wind')
+        };
+
+        function setClimate(type) {
+            const presets = {
+                arid: { temp: 38, rad: 1100, cloud: 5, wind: 2 },
+                tropical: { temp: 32, rad: 800, cloud: 40, wind: 1 },
+                temperate: { temp: 18, rad: 400, cloud: 60, wind: 5 }
+            };
+            Object.keys(inputs).forEach(key => inputs[key].value = presets[type][key]);
+            runSimulation();
+        }
+
+        function runSimulation() {
+            const tExt = parseFloat(inputs.temp.value);
+            const rad = parseFloat(inputs.rad.value);
+            const cloud = parseFloat(inputs.cloud.value);
+            const wind = parseFloat(inputs.wind.value);
+
+            // Update Labels
+            Object.keys(inputs).forEach(key => displays[key].innerText = inputs[key].value);
+
+            // IEQ Physics
+            const effectiveRad = rad * (1 - (cloud / 100) * 0.8);
+            let da = Math.min(100, (effectiveRad / 600) * 100);
+            
+            let coolingReduction = (tExt >= 16 && tExt <= 24 && wind > 2) ? 0.6 : 0;
+            let solarHeatGain = effectiveRad * 0.35 * 0.65 * 0.04; 
+            let rawIndoorTemp = tExt + solarHeatGain;
+            let operativeTemp = coolingReduction > 0 ? tExt + (rawIndoorTemp - tExt) * 0.4 : 22 + (rawIndoorTemp - 22) * 0.25;
+
+            // Load Physics
+            let hvacLoad = 0; let isCooling = true;
+            if (operativeTemp > 24) { hvacLoad = (operativeTemp - 24) * 5.0; isCooling = true; }
+            else if (operativeTemp < 20) { hvacLoad = (20 - operativeTemp) * 6.0; isCooling = false; }
+            hvacLoad *= (1 - coolingReduction);
+
+            let eei = 40 + (hvacLoad * 1.5) + (15 * (1 - da/100));
+
+            // UI Updates
+            document.getElementById('out-op-temp').innerText = operativeTemp.toFixed(1) + '°C';
+            document.getElementById('bar-op-temp').style.width = Math.max(0, Math.min(100, ((operativeTemp - 10) / 30) * 100)) + '%';
+            document.getElementById('out-op-temp').className = `text-3xl font-mono font-bold ${operativeTemp < 20 ? 'text-blue-400' : operativeTemp > 25 ? 'text-red-400' : 'text-green-400'}`;
+            document.getElementById('bar-op-temp').className = `h-full transition-width ${operativeTemp < 20 ? 'bg-blue-400' : operativeTemp > 25 ? 'bg-red-400' : 'bg-green-400'}`;
+
+            document.getElementById('out-da').innerText = da.toFixed(0) + '%';
+            document.getElementById('bar-da').style.width = da + '%';
+
+            document.getElementById('out-hvac').innerText = hvacLoad.toFixed(1);
+            document.getElementById('hvac-type').innerText = isCooling ? "(Cooling)" : "(Heating)";
+            document.getElementById('out-hvac').className = `text-2xl font-mono font-bold ${isCooling ? 'text-blue-400' : 'text-red-400'}`;
+            document.getElementById('bar-hvac').className = `h-full transition-width ${isCooling ? 'bg-blue-500' : 'bg-red-500'}`;
+            document.getElementById('bar-hvac').style.width = Math.min(100, hvacLoad) + '%';
+
+            document.getElementById('out-eei-val').innerText = eei.toFixed(0);
+            let eeiColor = eei < 90 ? 'text-green-400' : eei < 130 ? 'text-amber-400' : 'text-red-500';
+            document.getElementById('out-eei-grade').innerText = eei < 90 ? 'A' : eei < 130 ? 'B' : 'C';
+            document.getElementById('out-eei-grade').className = `text-2xl font-bold ${eeiColor}`;
+        }
+
+        Object.values(inputs).forEach(input => input.addEventListener('input', runSimulation));
+        document.addEventListener('DOMContentLoaded', runSimulation);
+    </script>
+</body>
+</html>

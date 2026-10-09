@@ -1,0 +1,16 @@
+# Sample weather series — monthly design means (ILLUSTRATIVE, not a real station file)
+# Format: timestamp,outdoorTempC,solarWm2,relHumidityPct,windMs,cloudPct
+# Units: ISO timestamp, °C, W/m², %, m/s, %
+timestamp,outdoorTempC,solarWm2,relHumidityPct,windMs,cloudPct
+2026-01-01T12:00,8,180,78,4.5,65
+2026-02-01T12:00,9,230,72,4.2,60
+2026-03-01T12:00,12,380,65,4.0,55
+2026-04-01T12:00,15,520,58,3.6,45
+2026-05-01T12:00,19,680,52,3.2,35
+2026-06-01T12:00,23,800,45,3.0,25
+2026-07-01T12:00,26,830,42,2.8,20
+2026-08-01T12:00,25,760,46,2.9,25
+2026-09-01T12:00,21,580,55,3.3,40
+2026-10-01T12:00,16,380,66,3.8,55
+2026-11-01T12:00,11,220,74,4.1,65
+2026-12-01T12:00,8,150,79,4.4,70

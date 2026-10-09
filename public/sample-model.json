@@ -1,0 +1,74 @@
+{
+  "name": "Example small pavilion (normalized exchange)",
+  "schema": "normalized-json-v1",
+  "storeys": ["Ground"],
+  "spaces": 2,
+  "floorAreaM2": 120,
+  "volumeM3": 420,
+  "elements": [
+    {
+      "id": "w-north",
+      "name": "North wall",
+      "category": "wall",
+      "areaM2": 42,
+      "areaProvenance": "extracted",
+      "uValueWm2K": 0.3,
+      "uProvenance": "extracted",
+      "material": "Timber cassette (example)",
+      "materialProvenance": "extracted",
+      "dims": { "x": 12, "y": 3.5, "z": 0.3 },
+      "center": { "x": 0, "y": 1.75, "z": -4 }
+    },
+    {
+      "id": "w-south",
+      "name": "South wall",
+      "category": "wall",
+      "areaM2": 30,
+      "areaProvenance": "extracted",
+      "material": "Timber cassette (example)",
+      "materialProvenance": "extracted",
+      "dims": { "x": 12, "y": 3.5, "z": 0.3 },
+      "center": { "x": 0, "y": 1.75, "z": 4 }
+    },
+    {
+      "id": "win-south",
+      "name": "South glazing",
+      "category": "window",
+      "areaM2": 18,
+      "areaProvenance": "extracted",
+      "uValueWm2K": 1.1,
+      "uProvenance": "extracted",
+      "dims": { "x": 10, "y": 1.8, "z": 0.1 },
+      "center": { "x": 0, "y": 1.9, "z": 4.05 }
+    },
+    {
+      "id": "roof-1",
+      "name": "Mono-pitch roof",
+      "category": "roof",
+      "areaM2": 130,
+      "areaProvenance": "extracted",
+      "uValueWm2K": 0.22,
+      "uProvenance": "extracted",
+      "dims": { "x": 12, "y": 0.25, "z": 9 },
+      "center": { "x": 0, "y": 3.6, "z": 0 }
+    },
+    {
+      "id": "floor-1",
+      "name": "Ground slab",
+      "category": "floor",
+      "areaM2": 120,
+      "areaProvenance": "extracted",
+      "dims": { "x": 12, "y": 0.3, "z": 9 },
+      "center": { "x": 0, "y": -0.15, "z": 0 }
+    },
+    {
+      "id": "door-1",
+      "name": "Entrance door",
+      "category": "door",
+      "areaM2": 2.2,
+      "areaProvenance": "extracted",
+      "dims": { "x": 1.1, "y": 2.2, "z": 0.12 },
+      "center": { "x": -3, "y": 1.1, "z": 4.05 }
+    }
+  ]
+}
