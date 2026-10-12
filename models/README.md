@@ -13,6 +13,7 @@ Just open each file in the app — no conversion needed.
 | `Wall-Opening-Window.ifc` | 12 KB | IFC4 | 1 wall + 1 window, both with extracted U-values | IFC4 schema smoke test |
 | `WallOnly.ifc` | 5 KB | IFC2X3 | Single wall, no quantities | Minimal edge case |
 | `EmptyTest.ifc` | 350 B | — | No building elements at all | Graceful rejection: the app must refuse it with a helpful message, not crash |
+| `261001_LEEZA_SOHO.ifc` | 810 MB | IFC2X3 (cm) | Real project model (Revit 2026 export): ~46k structural steel parts (mullions/plates), 121 slabs, 6 curtain walls, 41 storeys — **no walls/windows/doors and no quantity sets** | Full-scale test: real-geometry viewer placement, type-level data, assumption fallbacks. Allow several minutes to parse; camera auto-fits on load |
 
 Expected behaviour: every file above either imports with an element summary
 (plus honest warnings about anything missing) or — for `EmptyTest.ifc` only —

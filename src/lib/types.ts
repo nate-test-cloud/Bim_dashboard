@@ -28,6 +28,7 @@ export type ElementCategory =
   | 'door'
   | 'roof'
   | 'floor'
+  | 'structure' // members, plates, beams, columns… viewer-only, excluded from heat math
   | 'storey'
   | 'space'
   | 'other';
@@ -48,6 +49,13 @@ export interface BuildingElement {
   /** Approximate box dims (m) used to draw the element in the 3D viewer. */
   dims?: { x: number; y: number; z: number };
   center?: { x: number; y: number; z: number };
+  /**
+   * Optional viewer orientation as quaternion [x,y,z,w]. When present, dims
+   * are the oriented (local-frame) sizes and the box is rotated by this
+   * quaternion; when absent the box is axis-aligned. Derived from the
+   * element's own swept-solid frame — still an approximation, not the B-rep.
+   */
+  rotation?: [number, number, number, number];
   storey?: string;
 }
 

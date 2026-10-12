@@ -109,7 +109,7 @@ function SliderRow(props: {
 }
 
 export default function App() {
-  const [projectName, setProjectName] = useState('Leeza SOHO — Envelope Study');
+  const [projectName, setProjectName] = useState('Envelope Study');
   const [model, setModel] = useState<BuildingModel>(() => sampleBuilding());
   const [modelStatus, setModelStatus] = useState('Sample building loaded');
   const [env, setEnv] = useState<EnvInputs>(DEFAULT_ENV);
@@ -118,6 +118,7 @@ export default function App() {
   const [baselineId, setBaselineId] = useState<string | null>(null);
   const [climate, setClimate] = useState<ClimateTable | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [invFilter, setInvFilter] = useState('');
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err' | 'warn'; text: string } | null>(null);
 
   // view toggles
@@ -126,7 +127,7 @@ export default function App() {
   const [showAxes, setShowAxes] = useState(false);
   const [autoRotate, setAutoRotate] = useState(false);
   const [visibleTypes, setVisibleTypes] = useState<Record<string, boolean>>({
-    wall: true, window: true, door: true, roof: true, floor: true, other: true, tower: true,
+    wall: true, window: true, door: true, roof: true, floor: true, structure: true, other: true, tower: true,
   });
   // dialogs
   const [dlg, setDlg] = useState<null | 'bim' | 'climate' | 'help' | 'settings' | 'plugins'>(null);
@@ -355,7 +356,9 @@ export default function App() {
     setImportBusy(true);
     cancelRef.current = false;
     try {
-      log(`Reading ${file.name} (${(file.size / 1024).toFixed(0)} KB)…`);
+      log(`Reading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)…`);
+      if (file.size > 150 * 1024 * 1024)
+        log('Note: large file — parsing runs locally in your browser and may take a while. Progress is shown below.');
       const text = await file.text();
       if (cancelRef.current) { log('Cancelled by user.'); return; }
       // Show the ACTUAL imported geometry: parse then replace the viewer model.
@@ -444,6 +447,13 @@ export default function App() {
   const Slider = SliderRow;
 
   const selected = model.elements.find((e) => e.id === selectedId) ?? null;
+  const filteredInv = useMemo(() => {
+    const f = invFilter.trim().toLowerCase();
+    if (!f) return model.elements;
+    return model.elements.filter((e) =>
+      `${e.name} ${e.category} ${e.ifcType ?? ''} ${e.storey ?? ''}`.toLowerCase().includes(f),
+    );
+  }, [model, invFilter]);
   const coolKW = results.coolingLoadW / 1000;
   const heatKW = results.heatingLoadW / 1000;
   const eui = results.euiIllustrative;
@@ -604,8 +614,19 @@ export default function App() {
             <summary>⑤ Model inventory ({model.elements.length})</summary>
             <div className="body" style={{ fontSize: 12 }}>
               <div>Storeys: {model.storeys.join(', ') || '—'} • Spaces: {model.spaces}</div>
+              {model.elements.some((e) => e.category === 'structure') && (
+                <div style={{ color: '#64748b', marginTop: 2 }}>
+                  Incl. {model.elements.filter((e) => e.category === 'structure').length} structural parts
+                  (viewer only — excluded from heat calculations).
+                </div>
+              )}
+              <input
+                className="txt" placeholder="Filter elements…" aria-label="Filter elements"
+                value={invFilter} onChange={(e) => setInvFilter(e.target.value)}
+                style={{ marginTop: 6 }}
+              />
               <div style={{ maxHeight: 180, overflowY: 'auto', marginTop: 6 }}>
-                {model.elements.map((e) => (
+                {filteredInv.slice(0, 250).map((e) => (
                   <button
                     key={e.id}
                     className="btn"
@@ -616,6 +637,9 @@ export default function App() {
                   </button>
                 ))}
               </div>
+              {filteredInv.length > 250 && (
+                <div style={{ color: '#64748b' }}>Showing 250 of {filteredInv.length} — refine the filter to find more.</div>
+              )}
             </div>
           </details>
         </aside>
@@ -635,7 +659,7 @@ export default function App() {
               autoRotate={autoRotate}
             />
             <div className="btnrow" style={{ marginTop: 8 }}>
-              {(['wall', 'window', 'door', 'roof', 'floor'] as const).map((t) => (
+              {(['wall', 'window', 'door', 'roof', 'floor', 'structure'] as const).map((t) => (
                 <button
                   key={t}
                   className="btn"
