@@ -171,3 +171,220 @@ pre.log { background: #080f1f; border: 1px solid var(--border-soft); border-radi
 }
 .footer-note { font-size: 11px; color: var(--faint); padding: 6px 14px; border-top: 1px solid var(--border); background: #0d1526; }
 .mono { font-family: var(--mono); }
+
+/* Location search and climate components */
+.loc-search-box {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.loc-input-wrap {
+  position: relative;
+  flex: 1;
+}
+.loc-input {
+  width: 100%;
+  background: #0d1628;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 28px 7px 10px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.loc-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
+}
+.loc-clear-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--faint);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 14px;
+  border-radius: 4px;
+}
+.loc-clear-btn:hover {
+  color: var(--text);
+}
+.loc-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #0f1930;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 50;
+  padding: 4px;
+}
+.loc-item {
+  display: flex;
+  flex-direction: column;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: left;
+  background: none;
+  border: none;
+  width: 100%;
+}
+.loc-item:hover, .loc-item:focus {
+  background: #1a2742;
+  outline: none;
+}
+.loc-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.loc-item-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.loc-popular-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+.loc-pill {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #131d33;
+  border: 1px solid var(--border-soft);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.loc-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #0c2a3f;
+}
+.site-card {
+  background: #0e172a;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  margin-top: 8px;
+}
+.site-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.site-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.site-coords {
+  font-size: 10.5px;
+  color: var(--faint);
+  font-family: var(--mono);
+  margin-top: 2px;
+}
+.site-weather-badge {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #0c2a3f;
+  color: var(--accent);
+  border: 1px solid #0284c7;
+  white-space: nowrap;
+}
+.site-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin: 8px 0;
+}
+.site-metric {
+  background: #141f38;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 5px 4px;
+  text-align: center;
+}
+.site-metric-label {
+  font-size: 9.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.site-metric-val {
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--text);
+  margin-top: 2px;
+}
+.site-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 8px;
+}
+.site-modes button {
+  background: #131d33;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+}
+.site-modes button:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.site-modes button.active {
+  background: #0c2a3f;
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.site-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+.site-actions button {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+.env-location-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #082f49;
+  border: 1px solid #0284c7;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: #bae6fd;
+  margin-bottom: 8px;
+}
+

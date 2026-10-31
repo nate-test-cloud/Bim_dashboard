@@ -14,6 +14,14 @@ import { exportPdf, toCsv, toJson, downloadText, type ExportBundle } from './lib
 import { parseIfcText, validateIfcFile } from './lib/ifcParser';
 import { loadProject, saveProject, idbSet } from './lib/persistence';
 import { CLIMATE_PRESETS, demoTower, sampleBuilding } from './lib/sampleBuilding';
+import {
+  fetchSiteClimateData,
+  generateMonthlySeriesForSite,
+  POPULAR_SITES,
+  searchLocations,
+  type SiteClimateData,
+  type SiteLocation,
+} from './lib/locationClimate';
 import type {
   BuildingModel,
   DesignInputs,
@@ -121,6 +129,18 @@ export default function App() {
   const [invFilter, setInvFilter] = useState('');
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err' | 'warn'; text: string } | null>(null);
 
+  // site location and live climate state
+  const [siteLocation, setSiteLocation] = useState<SiteLocation | null>(null);
+  const [siteClimate, setSiteClimate] = useState<SiteClimateData | null>(null);
+  const [locSearchQuery, setLocSearchQuery] = useState('');
+  const [locSuggestions, setLocSuggestions] = useState<SiteLocation[]>([]);
+  const [isSearchingLoc, setIsSearchingLoc] = useState(false);
+  const [isLoadingClimate, setIsLoadingClimate] = useState(false);
+  const [showLocDropdown, setShowLocDropdown] = useState(false);
+  const [activeClimateMode, setActiveClimateMode] = useState<'current' | 'daylight' | 'summer' | 'winter'>('daylight');
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const searchDebounceRef = useRef<any>(null);
+
   // view toggles
   const [wireframe, setWireframe] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
@@ -219,31 +239,69 @@ export default function App() {
   const solarSweep = useMemo(() => sweepSolar(heatInputs, 0, 1200, 25), [heatInputs]);
 
   const monthlyLoads = useMemo(() => {
-    if (!climate || climate.monthlyAverages.length < 2) return null;
-    return climate.monthlyAverages.map((m) => {
-      const r = heatBalance({
-        ...heatInputs,
-        env: { ...heatInputs.env, outdoorTempC: m.tAvgC, solarIrradianceWm2: m.solarWm2 },
+    if (climate && climate.monthlyAverages.length >= 2) {
+      return climate.monthlyAverages.map((m) => {
+        const r = heatBalance({
+          ...heatInputs,
+          env: { ...heatInputs.env, outdoorTempC: m.tAvgC, solarIrradianceWm2: m.solarWm2 },
+        });
+        return {
+          name: m.month.slice(0, 7),
+          heating_kW: +(r.heatingLoadW / 1000).toFixed(2),
+          cooling_kW: +(r.coolingLoadW / 1000).toFixed(2),
+        };
       });
-      return {
-        name: m.month.slice(0, 7),
-        heating_kW: +(r.heatingLoadW / 1000).toFixed(2),
-        cooling_kW: +(r.coolingLoadW / 1000).toFixed(2),
-      };
-    });
-  }, [climate, heatInputs]);
+    }
+    if (siteClimate) {
+      const series = generateMonthlySeriesForSite(
+        siteClimate.location,
+        siteClimate.current.outdoorTempC,
+        siteClimate.daylightPeak.solarIrradianceWm2,
+      );
+      return series.map((m) => {
+        const r = heatBalance({
+          ...heatInputs,
+          env: { ...heatInputs.env, outdoorTempC: m.tAvgC, solarIrradianceWm2: m.solarWm2 },
+        });
+        return {
+          name: m.month.slice(5),
+          heating_kW: +(r.heatingLoadW / 1000).toFixed(2),
+          cooling_kW: +(r.coolingLoadW / 1000).toFixed(2),
+        };
+      });
+    }
+    return null;
+  }, [climate, siteClimate, heatInputs]);
 
   const presetCompare = useMemo(
-    () =>
-      (Object.keys(CLIMATE_PRESETS) as (keyof typeof CLIMATE_PRESETS)[]).map((k) => {
+    () => {
+      if (siteClimate) {
+        const siteScenarios = [
+          { name: `${siteClimate.location.name} (Live)`, env: siteClimate.current },
+          { name: `${siteClimate.location.name} (Daylight peak)`, env: siteClimate.daylightPeak },
+          { name: `${siteClimate.location.name} (Summer peak)`, env: siteClimate.summerDesign },
+          { name: `${siteClimate.location.name} (Winter peak)`, env: siteClimate.winterDesign },
+          { name: 'Arid ref', env: CLIMATE_PRESETS.arid.env },
+          { name: 'Temperate ref', env: CLIMATE_PRESETS.temperate.env },
+        ];
+        return siteScenarios.map((s) => {
+          const r = heatBalance({
+            ...heatInputs,
+            env: { ...heatInputs.env, ...s.env },
+          });
+          return { name: s.name, heating_kW: +(r.heatingLoadW / 1000).toFixed(2), cooling_kW: +(r.coolingLoadW / 1000).toFixed(2) };
+        });
+      }
+      return (Object.keys(CLIMATE_PRESETS) as (keyof typeof CLIMATE_PRESETS)[]).map((k) => {
         const pr = CLIMATE_PRESETS[k];
         const r = heatBalance({
           ...heatInputs,
           env: { ...heatInputs.env, outdoorTempC: pr.env.outdoorTempC, solarIrradianceWm2: pr.env.solarIrradianceWm2, cloudCoverPct: pr.env.cloudCoverPct, windSpeedMs: pr.env.windSpeedMs, relHumidityPct: pr.env.relHumidityPct },
         });
         return { name: k, heating_kW: +(r.heatingLoadW / 1000).toFixed(2), cooling_kW: +(r.coolingLoadW / 1000).toFixed(2) };
-      }),
-    [heatInputs],
+      });
+    },
+    [heatInputs, siteClimate],
   );
 
   const scenarioRows = useMemo(
@@ -281,10 +339,137 @@ export default function App() {
       return { ...d, [k]: value };
     });
 
-  const applyPreset = (k: keyof typeof CLIMATE_PRESETS) => {
-    const pr = CLIMATE_PRESETS[k];
-    setEnv((e) => ({ ...e, ...pr.env }));
-    setNotice({ kind: 'ok', text: `Climate preset applied: ${pr.label}. Values remain editable.` });
+  const handleSearchQueryChange = (val: string) => {
+    setLocSearchQuery(val);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (!val.trim()) {
+      setLocSuggestions([]);
+      setShowLocDropdown(false);
+      return;
+    }
+    searchDebounceRef.current = setTimeout(async () => {
+      setIsSearchingLoc(true);
+      if (searchAbortRef.current) searchAbortRef.current.abort();
+      searchAbortRef.current = new AbortController();
+      try {
+        const results = await searchLocations(val, searchAbortRef.current.signal);
+        setLocSuggestions(results);
+        setShowLocDropdown(true);
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          console.error(err);
+        }
+      } finally {
+        setIsSearchingLoc(false);
+      }
+    }, 300);
+  };
+
+  const executeSearchNow = async () => {
+    if (!locSearchQuery.trim()) {
+      setLocSuggestions(POPULAR_SITES.slice(0, 5));
+      setShowLocDropdown(true);
+      return;
+    }
+    setIsSearchingLoc(true);
+    if (searchAbortRef.current) searchAbortRef.current.abort();
+    searchAbortRef.current = new AbortController();
+    try {
+      const results = await searchLocations(locSearchQuery, searchAbortRef.current.signal);
+      setLocSuggestions(results);
+      setShowLocDropdown(true);
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        console.error(err);
+      }
+    } finally {
+      setIsSearchingLoc(false);
+    }
+  };
+
+  const handleSelectLocation = async (loc: SiteLocation) => {
+    setSiteLocation(loc);
+    setShowLocDropdown(false);
+    setLocSearchQuery(`${loc.name}${loc.country ? ', ' + loc.country : ''}`);
+    setIsLoadingClimate(true);
+    try {
+      const data = await fetchSiteClimateData(loc);
+      setSiteClimate(data);
+      const target = data.isDay && data.current.solarIrradianceWm2 > 30 ? data.current : data.daylightPeak;
+      const mode = data.isDay && data.current.solarIrradianceWm2 > 30 ? 'current' : 'daylight';
+      setActiveClimateMode(mode);
+      setEnv((e) => ({
+        ...e,
+        outdoorTempC: target.outdoorTempC,
+        solarIrradianceWm2: target.solarIrradianceWm2,
+        cloudCoverPct: target.cloudCoverPct,
+        windSpeedMs: target.windSpeedMs,
+        relHumidityPct: target.relHumidityPct,
+        analysisDate: new Date().toISOString().slice(0, 10),
+      }));
+      setNotice({
+        kind: 'ok',
+        text: `Site set to ${loc.name}, ${loc.country}. Live climate applied (${data.source === 'open-meteo-live' ? 'Open-Meteo API' : 'Regional model'}).`,
+      });
+    } catch {
+      setNotice({ kind: 'err', text: `Failed to load climatic data for ${loc.name}.` });
+    } finally {
+      setIsLoadingClimate(false);
+    }
+  };
+
+  const handleApplyClimateMode = (mode: 'current' | 'daylight' | 'summer' | 'winter') => {
+    if (!siteClimate) return;
+    setActiveClimateMode(mode);
+    const cond =
+      mode === 'current'
+        ? siteClimate.current
+        : mode === 'daylight'
+        ? siteClimate.daylightPeak
+        : mode === 'summer'
+        ? siteClimate.summerDesign
+        : siteClimate.winterDesign;
+
+    setEnv((e) => ({
+      ...e,
+      outdoorTempC: cond.outdoorTempC,
+      solarIrradianceWm2: cond.solarIrradianceWm2,
+      cloudCoverPct: cond.cloudCoverPct,
+      windSpeedMs: cond.windSpeedMs,
+      relHumidityPct: cond.relHumidityPct,
+    }));
+    const label =
+      mode === 'current'
+        ? 'Live snapshot'
+        : mode === 'daylight'
+        ? 'Daylight peak solar'
+        : mode === 'summer'
+        ? 'Summer design condition'
+        : 'Winter design condition';
+    setNotice({ kind: 'ok', text: `Applied ${label} for ${siteClimate.location.name}. Values remain editable.` });
+  };
+
+  const refreshSiteClimate = async () => {
+    if (!siteLocation) return;
+    setIsLoadingClimate(true);
+    try {
+      const data = await fetchSiteClimateData(siteLocation);
+      setSiteClimate(data);
+      handleApplyClimateMode(activeClimateMode);
+      setNotice({ kind: 'ok', text: `Climatic data refreshed for ${siteLocation.name}.` });
+    } catch {
+      setNotice({ kind: 'err', text: 'Failed to refresh climatic data.' });
+    } finally {
+      setIsLoadingClimate(false);
+    }
+  };
+
+  const clearSiteLocation = () => {
+    setSiteLocation(null);
+    setSiteClimate(null);
+    setLocSearchQuery('');
+    setShowLocDropdown(false);
+    setNotice({ kind: 'ok', text: 'Site location cleared. Environmental parameters can now be manually adjusted.' });
   };
 
   const resetToModel = () => {
@@ -477,6 +662,14 @@ export default function App() {
           {projectName} <span className="accent">BIM Sustainability Analytics</span>
         </div>
         <span className="badge info" title="BIM import state">{modelStatus}</span>
+        {siteLocation && (
+          <span
+            className="badge ok"
+            title={`Site: ${siteLocation.name}, ${siteLocation.country} (${siteLocation.latitude.toFixed(2)}°, ${siteLocation.longitude.toFixed(2)}°)`}
+          >
+            📍 Site: {siteLocation.name}
+          </span>
+        )}
         <span className="badge warn" title="Simplified physics — not a validated simulation engine">
           Mode: Analytical / Demo
         </span>
@@ -550,22 +743,216 @@ export default function App() {
           <h2 className="section-title">Model &amp; environmental controls</h2>
 
           <details className="coll" open>
-            <summary>① Climate presets</summary>
-            <div className="body">
-              <div className="presets">
-                {(Object.keys(CLIMATE_PRESETS) as (keyof typeof CLIMATE_PRESETS)[]).map((k) => (
-                  <button key={k} onClick={() => applyPreset(k)}>{k[0].toUpperCase() + k.slice(1)}</button>
-                ))}
+            <summary>① Site location &amp; climatic data</summary>
+            <div className="body" style={{ position: 'relative' }}>
+              <div className="loc-search-box">
+                <div className="loc-input-wrap">
+                  <input
+                    className="loc-input"
+                    type="text"
+                    placeholder="Search site location (e.g. London, Dubai, Tokyo)..."
+                    value={locSearchQuery}
+                    onChange={(e) => handleSearchQueryChange(e.target.value)}
+                    onFocus={() => {
+                      if (locSuggestions.length > 0) setShowLocDropdown(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        executeSearchNow();
+                      }
+                    }}
+                    aria-label="Site location search"
+                  />
+                  {locSearchQuery && (
+                    <button
+                      className="loc-clear-btn"
+                      title="Clear search"
+                      onClick={() => {
+                        setLocSearchQuery('');
+                        setLocSuggestions([]);
+                        setShowLocDropdown(false);
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                <button
+                  className="btn"
+                  style={{ padding: '7px 11px', whiteSpace: 'nowrap' }}
+                  onClick={executeSearchNow}
+                  disabled={isSearchingLoc}
+                  title="Search site location"
+                >
+                  {isSearchingLoc ? '⏳' : '🔍 Find'}
+                </button>
+
+                {showLocDropdown && (
+                  <>
+                    <div
+                      style={{ position: 'fixed', inset: 0, zIndex: 45 }}
+                      onClick={() => setShowLocDropdown(false)}
+                    />
+                    <div className="loc-dropdown">
+                      {locSuggestions.length > 0 ? (
+                        locSuggestions.map((loc) => (
+                          <button
+                            key={`${loc.id}-${loc.latitude}`}
+                            className="loc-item"
+                            onClick={() => handleSelectLocation(loc)}
+                          >
+                            <span className="loc-item-title">
+                              📍 {loc.name}{loc.admin1 ? `, ${loc.admin1}` : ''}
+                              <span style={{ fontWeight: 400, color: '#93a1b8', fontSize: 11 }}>({loc.country})</span>
+                            </span>
+                            <span className="loc-item-sub">
+                              {loc.latitude.toFixed(2)}°N, {loc.longitude.toFixed(2)}°E
+                              {loc.elevation != null ? ` • Alt: ${loc.elevation}m` : ''}
+                              {loc.timezone ? ` • ${loc.timezone}` : ''}
+                            </span>
+                          </button>
+                        ))
+                      ) : (
+                        <div style={{ padding: '8px 10px', fontSize: 12, color: '#93a1b8' }}>
+                          No matching locations found.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
-              <div className="hint" style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
-                Each preset sets a coherent outdoor snapshot; every value stays editable afterwards.
-              </div>
+
+              {!siteLocation && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 11, color: '#93a1b8', marginBottom: 4 }}>
+                    Quick site presets:
+                  </div>
+                  <div className="loc-popular-pills">
+                    {POPULAR_SITES.slice(0, 6).map((site) => (
+                      <button
+                        key={site.id}
+                        className="loc-pill"
+                        onClick={() => handleSelectLocation(site)}
+                      >
+                        📍 {site.name}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="hint" style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>
+                    Enter any city, site address, or global coordinates to pull real-time solar irradiance, ambient temperature, humidity, and wind speed.
+                  </div>
+                </div>
+              )}
+
+              {isLoadingClimate && (
+                <div style={{ marginTop: 8, padding: '8px 10px', background: '#0d1628', borderRadius: 8, fontSize: 12, color: 'var(--accent)' }}>
+                  ⏳ Loading live climatic data for {siteLocation?.name || 'site'}…
+                </div>
+              )}
+
+              {siteClimate && !isLoadingClimate && (
+                <div className="site-card">
+                  <div className="site-card-header">
+                    <div>
+                      <div className="site-name">📍 {siteClimate.location.name}, {siteClimate.location.country}</div>
+                      <div className="site-coords">
+                        {siteClimate.location.latitude.toFixed(2)}°N, {siteClimate.location.longitude.toFixed(2)}°E
+                        {siteClimate.location.elevation != null ? ` • Alt: ${siteClimate.location.elevation}m` : ''}
+                      </div>
+                    </div>
+                    <span className="site-weather-badge">
+                      {siteClimate.isDay ? '☀️' : '🌙'} {siteClimate.weatherLabel}
+                    </span>
+                  </div>
+
+                  <div className="site-grid">
+                    <div className="site-metric">
+                      <div className="site-metric-label">Temp</div>
+                      <div className="site-metric-val">{env.outdoorTempC} °C</div>
+                    </div>
+                    <div className="site-metric">
+                      <div className="site-metric-label">Solar Irradiance</div>
+                      <div className="site-metric-val">{env.solarIrradianceWm2} W/m²</div>
+                    </div>
+                    <div className="site-metric">
+                      <div className="site-metric-label">Humidity</div>
+                      <div className="site-metric-val">{env.relHumidityPct} %</div>
+                    </div>
+                    <div className="site-metric">
+                      <div className="site-metric-label">Wind</div>
+                      <div className="site-metric-val">{env.windSpeedMs} m/s</div>
+                    </div>
+                    <div className="site-metric">
+                      <div className="site-metric-label">Cloud</div>
+                      <div className="site-metric-val">{env.cloudCoverPct} %</div>
+                    </div>
+                    <div className="site-metric">
+                      <div className="site-metric-label">Peak Solar</div>
+                      <div className="site-metric-val">{siteClimate.daylightPeak.solarIrradianceWm2} W/m²</div>
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: 11, color: '#93a1b8', marginTop: 6, marginBottom: 3 }}>
+                    Analysis condition snapshot:
+                  </div>
+                  <div className="site-modes">
+                    <button
+                      className={activeClimateMode === 'current' ? 'active' : ''}
+                      onClick={() => handleApplyClimateMode('current')}
+                      title="Apply real-time live snapshot"
+                    >
+                      🕒 Live weather
+                    </button>
+                    <button
+                      className={activeClimateMode === 'daylight' ? 'active' : ''}
+                      onClick={() => handleApplyClimateMode('daylight')}
+                      title="Apply daytime peak solar condition"
+                    >
+                      ☀️ Peak solar
+                    </button>
+                    <button
+                      className={activeClimateMode === 'summer' ? 'active' : ''}
+                      onClick={() => handleApplyClimateMode('summer')}
+                      title="Summer extreme design conditions for cooling load"
+                    >
+                      🔥 Summer peak
+                    </button>
+                    <button
+                      className={activeClimateMode === 'winter' ? 'active' : ''}
+                      onClick={() => handleApplyClimateMode('winter')}
+                      title="Winter extreme design conditions for heating load"
+                    >
+                      ❄️ Winter peak
+                    </button>
+                  </div>
+
+                  <div className="site-actions">
+                    <button className="btn" onClick={refreshSiteClimate} title="Re-fetch latest live weather">
+                      🔄 Sync
+                    </button>
+                    <button className="btn" onClick={clearSiteLocation} title="Clear site and reset search">
+                      ✕ Change
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </details>
 
           <details className="coll" open>
             <summary>② Environmental parameters</summary>
             <div className="body">
+              {siteLocation ? (
+                <div className="env-location-badge">
+                  <span>📍 Site: <strong>{siteLocation.name}, {siteLocation.country}</strong></span>
+                  <span style={{ fontSize: 10, opacity: 0.85 }}>Live data synced</span>
+                </div>
+              ) : (
+                <div className="warnbox" style={{ marginTop: 0, marginBottom: 8, fontSize: 11 }}>
+                  ⚠️ Site location not set. Search and select a site location above to load local climatic data.
+                </div>
+              )}
               <Slider label="Outdoor air temp" value={env.outdoorTempC} min={-10} max={50} step={0.5} unit="°C" onChange={(v) => set('outdoorTempC', v)} tip="Dry-bulb outdoor temperature. ΔT = setpoint − outdoor drives Q = U·A·ΔT." />
               <Slider label="Solar radiation" value={env.solarIrradianceWm2} min={0} max={1200} step={10} unit="W/m²" onChange={(v) => set('solarIrradianceWm2', v)} tip="User-supplied incident irradiance on the glazing plane. Used DIRECTLY in G·A·SHGC·shade — cloud cover is never silently applied." />
               <Slider label="Cloud cover" value={env.cloudCoverPct} min={0} max={100} step={1} unit="%" onChange={(v) => set('cloudCoverPct', v)} tip="Informational only. It does NOT rescale your solar input; supply measured irradiance directly." />
@@ -720,16 +1107,22 @@ export default function App() {
                 <SimpleBar data={[{ name: 'Heating', value: +heatKW.toFixed(2) }, { name: 'Cooling', value: +coolKW.toFixed(2) }, { name: 'Solar gain', value: +(results.solarGainW / 1000).toFixed(2) }]} />
                 <h2 className="section-title" style={{ marginTop: 12 }}>Envelope conduction magnitude by component (W, |Q|)</h2>
                 <SimpleBar data={results.transmissionByComponent.map((c) => ({ name: c.label, value: +c.valueW.toFixed(0) }))} />
-                <h2 className="section-title" style={{ marginTop: 12 }}>Climate presets vs current design (kW)</h2>
+                <h2 className="section-title" style={{ marginTop: 12 }}>
+                  {siteLocation ? `Site climate scenarios vs current design (kW)` : `Climate presets vs current design (kW)`}
+                </h2>
                 <GroupedBar data={presetCompare} series={[{ key: 'heating_kW', color: '#f87171' }, { key: 'cooling_kW', color: '#38bdf8' }]} />
                 {monthlyLoads ? (
                   <>
-                    <h2 className="section-title" style={{ marginTop: 12 }}>Monthly mean-condition loads from imported weather (kW snapshots — not integrated kWh)</h2>
+                    <h2 className="section-title" style={{ marginTop: 12 }}>
+                      {climate
+                        ? 'Monthly mean-condition loads from imported weather (kW snapshots)'
+                        : `Monthly seasonal loads for ${siteClimate?.location.name ?? 'site'} (kW design snapshots)`}
+                    </h2>
                     <GroupedBar data={monthlyLoads} series={[{ key: 'heating_kW', color: '#f87171' }, { key: 'cooling_kW', color: '#38bdf8' }]} />
                   </>
                 ) : (
                   <div className="hint" style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>
-                    Import a multi-row climate CSV to enable the monthly chart. Single snapshots cannot produce annual results.
+                    Select a site location above or import a climate CSV to enable the monthly seasonal load chart.
                   </div>
                 )}
                 {scenarioRows.length > 1 && (
