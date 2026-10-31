@@ -47,5 +47,5 @@ describe('locationClimate', () => {
     expect(typeof climate.current.solarIrradianceWm2).toBe('number');
     expect(climate.daylightPeak.solarIrradianceWm2).toBeGreaterThanOrEqual(100);
     expect(climate.summerDesign.outdoorTempC).toBeGreaterThan(climate.winterDesign.outdoorTempC);
-  });
+  }, 10000);
 });

@@ -8,38 +8,40 @@
 }
 
 :root {
-  /* Deep Graphite & Studio Slate Surfaces */
-  --bg-ground: #0a0c10;
-  --bg-canvas: #0e1117;
-  --bg-topbar: rgba(13, 16, 22, 0.95);
-  --bg-panel: #13171f;
-  --bg-surface: #181d26;
-  --bg-elevated: #1e2430;
-  --bg-input: #10131a;
-  --bg-hover: #222936;
-  --bg-active: #2b3342;
+  /* Blender 4 & Rhino CAD Workstation Surfaces */
+  --bg-ground: #16171a;        /* Deep matte workbench ground */
+  --bg-canvas: #22252a;        /* Neutral studio 3D viewport */
+  --bg-topbar: #1b1c20;        /* Header strip */
+  --bg-panel: #26292f;         /* Blender properties dock dark gray */
+  --bg-surface: #2d3138;       /* Elevated container / card surface */
+  --bg-elevated: #353a42;      /* Interactive hover / active container */
+  --bg-input: #1a1c20;         /* Recessed numeric well */
+  --bg-hover: #3a4049;         /* Highlighted tool state */
+  --bg-active: #444b56;        /* Pressed state */
 
-  /* Precision Engineering Hairline Rules */
-  --rule: rgba(255, 255, 255, 0.08);
-  --rule-subtle: rgba(255, 255, 255, 0.04);
-  --rule-strong: rgba(255, 255, 255, 0.15);
-  --rule-focus: #3b82f6;
+  /* Precision CAD Etched Hairline Seams */
+  --rule: #181a1e;
+  --rule-subtle: rgba(255, 255, 255, 0.05);
+  --rule-strong: #404652;
+  --rule-focus: #ea7600;       /* Blender Active Orange */
 
   /* Typography */
   --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'IBM Plex Mono', 'JetBrains Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  /* High-Contrast Legibility Hierarchy */
-  --text-lead: #f8fafc;        /* Slate-50: Crisp headers & key numbers */
-  --text-body: #cbd5e1;        /* Slate-300: High clarity body reading */
-  --text-muted: #94a3b8;       /* Slate-400: Specifications & labels */
-  --text-faint: #64748b;       /* Slate-500: Units & secondary annotations */
+  /* High-Contrast Technical Legibility */
+  --text-lead: #f0f2f5;        /* Crisp silver-white */
+  --text-body: #d0d4dc;        /* High-clarity technical silver */
+  --text-muted: #959ba6;       /* Clean neutral slate metadata */
+  --text-faint: #676e7a;       /* Monospace units & secondary specs */
 
-  /* Functional Engineering Accents */
-  --brand-primary: #2563eb;    /* International Klein / CAD blue */
-  --brand-primary-hover: #3b82f6;
-  --brand-tint: rgba(37, 99, 235, 0.15);
+  /* Workstation Accents */
+  --brand-primary: #ea7600;    /* Blender Iconic Action Orange */
+  --brand-primary-hover: #ff8e1c;
+  --brand-tint: rgba(234, 118, 0, 0.18);
+  --cad-blue: #3888d8;         /* Technical CAD Cyan / Blue */
+  --cad-steel: #365d8c;        /* Blender classic slider steel */
 
   --solar-amber: #f59e0b;      /* Solar radiation & daylight gains */
   --sky-cobalt: #0284c7;       /* Free-cooling, glazing transmission */
@@ -407,13 +409,13 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: rgba(14, 17, 23, 0.88);
+  background: rgba(27, 29, 34, 0.92);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-sm);
   padding: 8px 14px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   pointer-events: auto;
   user-select: none;
 }
@@ -1567,8 +1569,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
   top: 0;
   left: 0;
   bottom: 0;
-  background: rgba(37, 99, 235, 0.22);
-  border-right: 2px solid rgba(96, 165, 250, 0.6);
+  background: rgba(54, 93, 140, 0.45);
+  border-right: 2px solid #588ec9;
   pointer-events: none;
   transition: width 0.05s ease;
 }

@@ -18,15 +18,15 @@ interface Props {
   onToggleAxes?: () => void;
 }
 
-// Professional architectural engineering palette with high spatial contrast
+// Professional Blender / Rhino CAD Architectural Palette
 const COLORS: Record<string, number> = {
-  wall: 0xc8d1dc,      // Architectural off-white / concrete
-  window: 0x38bdf8,    // Crystalline cyan glass
-  door: 0xd97706,      // Architectural timber / bronze
-  roof: 0x1e293b,      // Modern dark corporate slate
-  floor: 0x475569,     // Structural slab concrete
-  structure: 0x3b82f6, // High-performance metallic steel
-  other: 0x6366f1,     // Corporate indigo accent
+  wall: 0xdfd9d2,      // Matte architectural limestone / warm concrete
+  window: 0x64b5f6,    // Crystalline architectural glazing
+  door: 0xb87333,      // Architectural bronze / timber
+  roof: 0x4f5864,      // Dark zinc / slate roof assembly (high visibility)
+  floor: 0x757f8d,     // Structural slab concrete
+  structure: 0xea7600, // Blender CAD structural accent
+  other: 0x818cf8,     // Auxiliary spatial element
 };
 
 interface SceneRefs {
@@ -125,8 +125,8 @@ export default function Viewer3D(p: Props) {
       const H = Math.max(mount.clientHeight || 520, 480);
       const scene = new THREE.Scene();
       // Precision CAD / Architectural Studio Environment
-      scene.background = new THREE.Color(0x0e1117);
-      scene.fog = new THREE.FogExp2(0x0e1117, 0.0035);
+      scene.background = new THREE.Color(0x22252a);
+      scene.fog = new THREE.FogExp2(0x22252a, 0.002);
 
       const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 2000);
       camera.position.set(28, 22, 34);
@@ -136,7 +136,7 @@ export default function Viewer3D(p: Props) {
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.1;
+      renderer.toneMappingExposure = 1.05;
 
       mount.appendChild(renderer.domElement);
       const controls = new OrbitControls(camera, renderer.domElement);
@@ -146,26 +146,26 @@ export default function Viewer3D(p: Props) {
       controls.autoRotateSpeed = 0.75;
 
       // Studio architectural lighting
-      const ambient = new THREE.AmbientLight(0x334155, 1.2);
+      const ambient = new THREE.AmbientLight(0x454b56, 1.25);
       scene.add(ambient);
 
-      const hemiLight = new THREE.HemisphereLight(0x94a3b8, 0x0f172a, 0.85);
+      const hemiLight = new THREE.HemisphereLight(0xd1d9e6, 0x1a1c20, 0.95);
       hemiLight.position.set(0, 50, 0);
       scene.add(hemiLight);
 
-      const sun = new THREE.DirectionalLight(0xfff8ed, 1.6);
+      const sun = new THREE.DirectionalLight(0xfffbf2, 1.75);
       sun.position.set(45, 65, 35);
       sun.castShadow = true;
       sun.shadow.mapSize.width = 1024;
       sun.shadow.mapSize.height = 1024;
       scene.add(sun);
 
-      const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.45);
+      const fillLight = new THREE.DirectionalLight(0x94b4db, 0.5);
       fillLight.position.set(-30, 20, -30);
       scene.add(fillLight);
 
-      // Precision CAD Grid
-      const grid = new THREE.GridHelper(80, 40, 0x334155, 0x1e2631);
+      // Precision CAD Grid (Rhino / Blender style)
+      const grid = new THREE.GridHelper(80, 40, 0x4e5666, 0x2d323c);
       grid.name = 'grid';
       grid.position.y = -0.02;
       grid.visible = stateRef.current.showGrid;
