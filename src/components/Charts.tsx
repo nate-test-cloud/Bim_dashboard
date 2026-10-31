@@ -42,10 +42,10 @@ export function TempSweepChart({ data }: { data: { tOut: number; heatingW: numbe
           stroke="rgba(255, 255, 255, 0.15)"
           tick={{ fill: '#8b929e', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace' }}
         />
-        <Tooltip contentStyle={chartTooltipStyle} />
+        <Tooltip contentStyle={chartTooltipStyle} cursor={{ stroke: 'rgba(255, 255, 255, 0.2)', strokeWidth: 1, strokeDasharray: '2 2' }} />
         <Legend wrapperStyle={{ fontSize: 11, color: '#8b929e', paddingTop: 4 }} />
         <Line type="monotone" dataKey="heating_kW" stroke="#dc2626" dot={false} strokeWidth={1.8} name="Heating (kW)" />
-        <Line type="monotone" dataKey="cooling_kW" stroke="#0284c7" dot={false} strokeWidth={1.8} name="Cooling (kW)" />
+        <Line type="monotone" dataKey="cooling_kW" stroke="#5e7a88" dot={false} strokeWidth={1.8} name="Cooling (kW)" />
       </LineChart>
     </ResponsiveContainer>
   );
@@ -67,7 +67,7 @@ export function SolarSweepChart({ data }: { data: { solar: number; gainW: number
           stroke="rgba(255, 255, 255, 0.15)"
           tick={{ fill: '#8b929e', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace' }}
         />
-        <Tooltip contentStyle={chartTooltipStyle} />
+        <Tooltip contentStyle={chartTooltipStyle} cursor={{ stroke: 'rgba(255, 255, 255, 0.2)', strokeWidth: 1, strokeDasharray: '2 2' }} />
         <Legend wrapperStyle={{ fontSize: 11, color: '#8b929e', paddingTop: 4 }} />
         <Line type="monotone" dataKey="gain_kW" stroke="#d97706" dot={false} strokeWidth={1.8} name="Solar gain (kW)" />
       </LineChart>
@@ -99,8 +99,14 @@ export function SimpleBar({
           stroke="rgba(255, 255, 255, 0.15)"
           tick={{ fill: '#8b929e', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace' }}
         />
-        <Tooltip contentStyle={chartTooltipStyle} />
-        <Bar dataKey="value" fill="#475569" radius={[2, 2, 0, 0]} />
+        <Tooltip contentStyle={chartTooltipStyle} cursor={false} />
+        <Bar
+          dataKey="value"
+          fill="#475569"
+          radius={[2, 2, 0, 0]}
+          fillOpacity={0.85}
+          activeBar={{ stroke: '#ffffff', strokeWidth: 1.5, fillOpacity: 1, strokeOpacity: 0.8 }}
+        />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -118,24 +124,31 @@ export function GroupedBar({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 12, right: 14, left: -6, bottom: 0 }}>
-        <CartesianGrid stroke="rgba(226, 232, 240, 0.8)" strokeDasharray="3 3" vertical={false} />
+        <CartesianGrid stroke="rgba(255, 255, 255, 0.05)" strokeDasharray="2 2" vertical={false} />
         <XAxis
           dataKey="name"
-          stroke="rgba(203, 213, 225, 0.9)"
-          tick={{ fill: '#64748b', fontSize: 10.5 }}
+          stroke="rgba(255, 255, 255, 0.15)"
+          tick={{ fill: '#8b929e', fontSize: 10.5 }}
           interval={0}
           angle={-18}
           dy={8}
           height={56}
         />
         <YAxis
-          stroke="rgba(203, 213, 225, 0.9)"
-          tick={{ fill: '#64748b', fontSize: 10.5, fontFamily: 'IBM Plex Mono, monospace' }}
+          stroke="rgba(255, 255, 255, 0.15)"
+          tick={{ fill: '#8b929e', fontSize: 10.5, fontFamily: 'IBM Plex Mono, monospace' }}
         />
-        <Tooltip contentStyle={chartTooltipStyle} />
-        <Legend wrapperStyle={{ fontSize: 11.5, color: '#475569', paddingTop: 8 }} />
+        <Tooltip contentStyle={chartTooltipStyle} cursor={false} />
+        <Legend wrapperStyle={{ fontSize: 11.5, color: '#8b929e', paddingTop: 8 }} />
         {series.map((s) => (
-          <Bar key={s.key} dataKey={s.key} fill={s.color} radius={[5, 5, 0, 0]} opacity={0.92} />
+          <Bar
+            key={s.key}
+            dataKey={s.key}
+            fill={s.color}
+            radius={[3, 3, 0, 0]}
+            fillOpacity={0.85}
+            activeBar={{ stroke: '#ffffff', strokeWidth: 1.5, fillOpacity: 1, strokeOpacity: 0.8 }}
+          />
         ))}
       </BarChart>
     </ResponsiveContainer>
