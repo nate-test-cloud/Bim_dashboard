@@ -103,22 +103,126 @@ function SliderRow(props: {
   label: string; value: number; min: number; max: number; step: number; unit: string;
   tip?: string; onChange: (v: number) => void; prov?: ProvValue;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [textVal, setTextVal] = useState(String(props.value));
+  const barRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+
+  // Sync text value when external value changes
+  useEffect(() => {
+    if (!isEditing) setTextVal(String(props.value));
+  }, [props.value, isEditing]);
+
+  const pct = Math.max(0, Math.min(100, ((props.value - props.min) / (props.max - props.min)) * 100));
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isEditing) return;
+    if (e.button !== 0) return;
+    isDraggingRef.current = true;
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+
+    const updateFromPointer = (clientX: number) => {
+      if (!barRef.current) return;
+      const rect = barRef.current.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      const raw = props.min + ratio * (props.max - props.min);
+      const stepped = Math.round(raw / props.step) * props.step;
+      const precision = props.step < 0.1 ? 2 : props.step < 1 ? 1 : 0;
+      props.onChange(Number(stepped.toFixed(precision)));
+    };
+
+    updateFromPointer(e.clientX);
+
+    const handlePointerMove = (ev: PointerEvent) => {
+      if (!isDraggingRef.current) return;
+      updateFromPointer(ev.clientX);
+    };
+
+    const handlePointerUp = () => {
+      isDraggingRef.current = false;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
+  const handleCommitText = () => {
+    setIsEditing(false);
+    const n = parseFloat(textVal);
+    if (!isNaN(n)) {
+      const clamped = Math.max(props.min, Math.min(props.max, n));
+      const precision = props.step < 0.1 ? 2 : props.step < 1 ? 1 : 0;
+      props.onChange(Number(clamped.toFixed(precision)));
+    }
+  };
+
   return (
-    <div className="ctl" style={{ marginBottom: 8 }}>
-      <div className="row" style={{ marginBottom: 2 }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-body)' }}>
-          {props.tip ? <span className="tooltip" data-tip={props.tip}>{props.label}</span> : props.label}
-          {props.prov && <ProvTag v={props.prov} />}
-        </label>
-        <span className="mono" style={{ fontSize: 12, color: 'var(--text-lead)', fontWeight: 600 }}>
-          {props.value}<span style={{ color: 'var(--text-faint)', fontWeight: 400, fontSize: 11 }}> {props.unit}</span>
-        </span>
+    <div
+      ref={barRef}
+      className={`blender-scrubber ${isEditing ? 'editing' : ''}`}
+      onPointerDown={handlePointerDown}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        setIsEditing(true);
+        setTextVal(String(props.value));
+      }}
+      title={props.tip ? `${props.tip} (Drag horizontally to scrub, double-click to type)` : 'Drag horizontally to scrub, double-click to type'}
+      role="slider"
+      aria-label={props.label}
+      aria-valuenow={props.value}
+      aria-valuemin={props.min}
+      aria-valuemax={props.max}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (isEditing) return;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const precision = props.step < 0.1 ? 2 : props.step < 1 ? 1 : 0;
+          props.onChange(Number(Math.min(props.max, props.value + props.step).toFixed(precision)));
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          const precision = props.step < 0.1 ? 2 : props.step < 1 ? 1 : 0;
+          props.onChange(Number(Math.max(props.min, props.value - props.step).toFixed(precision)));
+        } else if (e.key === 'Enter') {
+          setIsEditing(true);
+        }
+      }}
+    >
+      {/* Background scrub fill progress */}
+      <div className="scrubber-bar-fill" style={{ width: `${pct}%` }} />
+
+      {/* Scrubber Label & Provenance */}
+      <div className="scrubber-label-group">
+        <span className="scrubber-label">{props.label}</span>
+        {props.prov && <ProvTag v={props.prov} />}
       </div>
-      <input
-        type="range" aria-label={props.label}
-        min={props.min} max={props.max} step={props.step} value={props.value}
-        onChange={(e) => props.onChange(Number(e.target.value))}
-      />
+
+      {/* Scrubber Value Display or Input */}
+      {isEditing ? (
+        <input
+          type="number"
+          autoFocus
+          className="scrubber-inline-input"
+          value={textVal}
+          step={props.step}
+          onChange={(e) => setTextVal(e.target.value)}
+          onBlur={handleCommitText}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleCommitText();
+            if (e.key === 'Escape') setIsEditing(false);
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <div className="scrubber-value-group">
+          <span className="scrubber-num">{props.value}</span>
+          {props.unit && <span className="scrubber-unit">{props.unit}</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -670,6 +774,18 @@ export default function App() {
   const coolKW = results.coolingLoadW / 1000;
   const heatKW = results.heatingLoadW / 1000;
   const eui = results.euiIllustrative;
+  const [collapsedStoreys, setCollapsedStoreys] = useState<Record<string, boolean>>({});
+  const toggleStorey = (st: string) => setCollapsedStoreys((prev) => ({ ...prev, [st]: !prev[st] }));
+
+  const groupedElements = useMemo(() => {
+    const map = new Map<string, typeof filteredInv>();
+    for (const el of filteredInv) {
+      const s = el.storey || 'Storey: Level 01';
+      if (!map.has(s)) map.set(s, []);
+      map.get(s)!.push(el);
+    }
+    return Array.from(map.entries());
+  }, [filteredInv]);
   const vsBase =
     baselineResults != null
       ? {
@@ -765,6 +881,45 @@ export default function App() {
             onToggleGrid={() => setShowGrid((v) => !v)}
             onToggleAxes={() => setShowAxes((v) => !v)}
           />
+
+          {/* Blender-Style Left Viewport 'T' Shelf Toolbar */}
+          <div className="cad-left-shelf">
+            <button
+              className={`shelf-tool-btn ${!autoRotate ? 'active' : ''}`}
+              title="Select / Pick Element (B)"
+              onClick={() => {}}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l7 18 3-7 7-3L3 3z"/></svg>
+            </button>
+            <button
+              className={`shelf-tool-btn ${autoRotate ? 'active' : ''}`}
+              title="Auto-Orbit Turntable (Space)"
+              onClick={() => setAutoRotate((v) => !v)}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            </button>
+            <button
+              className={`shelf-tool-btn ${wireframe ? 'active' : ''}`}
+              title="Toggle Wireframe Overlay (Z)"
+              onClick={() => setWireframe((v) => !v)}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+            </button>
+            <button
+              className={`shelf-tool-btn ${showGrid ? 'active' : ''}`}
+              title="Toggle Spatial Ground Grid (G)"
+              onClick={() => setShowGrid((v) => !v)}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+            </button>
+            <button
+              className={`shelf-tool-btn ${showAxes ? 'active' : ''}`}
+              title="Toggle World XYZ Axes"
+              onClick={() => setShowAxes((v) => !v)}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="12" x2="12" y2="2"/><line x1="12" y1="12" x2="22" y2="12"/><line x1="12" y1="12" x2="5" y2="19"/></svg>
+            </button>
+          </div>
 
           {/* Floating High-Density Viewport Telemetry HUD */}
           <div className="cad-telemetry-hud">
@@ -1023,26 +1178,34 @@ export default function App() {
             <button
               className={`inspector-tab ${inspectorTab === 'envelope' ? 'active' : ''}`}
               onClick={() => setInspectorTab('envelope')}
+              title="Building Envelope & Physics"
             >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ marginRight: 4 }}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
               Envelope
             </button>
             <button
               className={`inspector-tab ${inspectorTab === 'climate' ? 'active' : ''}`}
               onClick={() => setInspectorTab('climate')}
+              title="Site Climate & Atmosphere"
             >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ marginRight: 4 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
               Climate
             </button>
             <button
               className={`inspector-tab ${inspectorTab === 'specs' ? 'active' : ''}`}
               onClick={() => setInspectorTab('specs')}
+              title="Performance & Energy Specs"
             >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ marginRight: 4 }}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
               Specs
             </button>
             <button
               className={`inspector-tab ${inspectorTab === 'model' ? 'active' : ''}`}
               onClick={() => setInspectorTab('model')}
+              title="Scene Outliner & Collections"
             >
-              Elements
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ marginRight: 4 }}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              Outliner
             </button>
           </div>
 
@@ -1290,40 +1453,111 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB 4: ELEMENTS & INVENTORY */}
+            {/* TAB 4: BLENDER SCENE OUTLINER */}
             {inspectorTab === 'model' && (
               <div className="inspector-tab-pane">
-                <div className="inspector-sec-head">MODEL SUMMARY</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
-                  <div>Storeys: <strong>{model.storeys.join(', ') || '—'}</strong></div>
-                  <div>Spaces: <strong>{model.spaces}</strong> · Floor Area: <strong>{model.floorAreaM2} m²</strong></div>
-                  <div>Volume: <strong>{model.volumeM3} m³</strong> · Entities: <strong>{model.elements.length}</strong></div>
+                <div className="blender-outliner-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 13 }}>🗂</span>
+                    <span className="outliner-title">Scene Collection</span>
+                  </div>
+                  <span className="outliner-count">{model.elements.length} items</span>
                 </div>
 
-                <div className="inspector-sec-head">SEARCH ELEMENTS</div>
-                <input
-                  className="txt"
-                  placeholder="Filter elements by name or type…"
-                  aria-label="Filter elements"
-                  value={invFilter}
-                  onChange={(e) => setInvFilter(e.target.value)}
-                  style={{ width: '100%', marginBottom: 8 }}
-                />
-                <div className="inspector-element-list">
-                  {filteredInv.slice(0, 250).map((e) => (
-                    <button
-                      key={e.id}
-                      className={`inspector-elem-item ${selectedId === e.id ? 'active' : ''}`}
-                      onClick={() => setSelectedId(e.id)}
-                    >
-                      <div className="inspector-elem-name">{e.name}</div>
-                      <div className="inspector-elem-sub">{e.category} · {e.areaM2} m² {e.uValueWm2K ? `· ${e.uValueWm2K} W/m²K` : ''}</div>
-                    </button>
-                  ))}
+                <div className="outliner-filter-wrap">
+                  <input
+                    className="outliner-filter-input"
+                    placeholder="Search collections & elements…"
+                    aria-label="Filter elements"
+                    value={invFilter}
+                    onChange={(e) => setInvFilter(e.target.value)}
+                  />
+                  {invFilter && (
+                    <button className="btn-close" onClick={() => setInvFilter('')}>✕</button>
+                  )}
                 </div>
-                {filteredInv.length > 250 && (
-                  <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>Showing 250 of {filteredInv.length} elements</div>
-                )}
+
+                <div className="blender-outliner-tree">
+                  {/* Root Collection: Project Building Model */}
+                  <div className="outliner-item collection-root">
+                    <span className="outliner-chevron">▼</span>
+                    <span className="outliner-folder-icon">🏢</span>
+                    <span className="outliner-name-strong">{model.name}</span>
+                    <span className="outliner-badge">{model.floorAreaM2} m²</span>
+                  </div>
+
+                  {/* Grouped Collections (Storeys / Levels) */}
+                  {groupedElements.map(([storeyName, elements]) => {
+                    const isCollapsed = !!collapsedStoreys[storeyName];
+                    const firstCat = elements[0]?.category;
+                    const allCatVisible = firstCat ? visibleTypes[firstCat] !== false : true;
+
+                    return (
+                      <div key={storeyName} className="outliner-collection-group">
+                        <div
+                          className="outliner-item storey-row"
+                          onClick={() => toggleStorey(storeyName)}
+                        >
+                          <span className="outliner-chevron">{isCollapsed ? '▶' : '▼'}</span>
+                          <span className="outliner-folder-icon">📂</span>
+                          <span className="outliner-name">{storeyName}</span>
+                          <span className="outliner-count-pill">{elements.length}</span>
+                          <button
+                            className={`outliner-eye-btn ${allCatVisible ? 'active' : 'dim'}`}
+                            title="Toggle layer visibility"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (firstCat) {
+                                setVisibleTypes((v) => ({ ...v, [firstCat]: !v[firstCat] }));
+                              }
+                            }}
+                          >
+                            👁
+                          </button>
+                        </div>
+
+                        {/* Storey Children Elements */}
+                        {!isCollapsed && (
+                          <div className="outliner-children">
+                            {elements.slice(0, 150).map((e) => {
+                              const isSelected = selectedId === e.id;
+                              const isCatVisible = visibleTypes[e.category] !== false;
+                              const catIcon =
+                                e.category === 'wall' ? '🧱' :
+                                e.category === 'window' ? '🪟' :
+                                e.category === 'roof' ? '🏠' :
+                                e.category === 'floor' ? '📐' : '🏗';
+
+                              return (
+                                <div
+                                  key={e.id}
+                                  className={`outliner-item element-row ${isSelected ? 'active' : ''}`}
+                                  onClick={() => setSelectedId(e.id)}
+                                >
+                                  <span className="outliner-elem-icon">{catIcon}</span>
+                                  <div className="outliner-elem-info">
+                                    <span className="outliner-elem-name">{e.name}</span>
+                                    <span className="outliner-elem-meta">{e.areaM2} m² {e.uValueWm2K ? `· U ${e.uValueWm2K}` : ''}</span>
+                                  </div>
+                                  <button
+                                    className={`outliner-eye-btn ${isCatVisible ? 'active' : 'dim'}`}
+                                    title={`Toggle ${e.category} visibility`}
+                                    onClick={(eEvt) => {
+                                      eEvt.stopPropagation();
+                                      setVisibleTypes((v) => ({ ...v, [e.category]: !v[e.category] }));
+                                    }}
+                                  >
+                                    👁
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

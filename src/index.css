@@ -1524,3 +1524,342 @@ input[type="range"]::-webkit-slider-thumb:hover {
   gap: 6px;
   margin-top: 6px;
 }
+
+/* ==========================================================================
+   Blender UI System: Interactive Scrubber Pills (Numeric Drag Scrubbers)
+   ========================================================================== */
+.blender-scrubber {
+  position: relative;
+  height: 25px;
+  background: var(--bg-surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-xs);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  margin-bottom: 5px;
+  cursor: ew-resize;
+  user-select: none;
+  overflow: hidden;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.blender-scrubber:hover {
+  border-color: var(--rule-strong);
+  background: var(--bg-elevated);
+}
+
+.blender-scrubber:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 1px var(--brand-primary);
+}
+
+.blender-scrubber.editing {
+  cursor: text;
+  border-color: var(--brand-primary);
+  background: var(--bg-input);
+}
+
+.scrubber-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: rgba(37, 99, 235, 0.22);
+  border-right: 2px solid rgba(96, 165, 250, 0.6);
+  pointer-events: none;
+  transition: width 0.05s ease;
+}
+
+.scrubber-label-group {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 65%;
+  overflow: hidden;
+}
+
+.scrubber-label {
+  font-size: 11px;
+  color: var(--text-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scrubber-value-group {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  font-family: var(--font-mono);
+}
+
+.scrubber-num {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-lead);
+}
+
+.scrubber-unit {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.scrubber-inline-input {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: right;
+  padding: 0 4px;
+}
+
+/* ==========================================================================
+   Blender Left Viewport 'T' Toolbar Shelf
+   ========================================================================== */
+.cad-left-shelf {
+  position: absolute;
+  top: 54px;
+  left: 14px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(14, 17, 23, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+
+.shelf-tool-btn {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.shelf-tool-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-lead);
+}
+
+.shelf-tool-btn.active {
+  background: rgba(37, 99, 235, 0.22);
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.shelf-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 3px 2px;
+}
+
+/* ==========================================================================
+   Blender Scene Outliner Tree
+   ========================================================================== */
+.blender-outliner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--rule-subtle);
+  margin-bottom: 6px;
+}
+
+.outliner-title {
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-lead);
+}
+
+.outliner-count {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}
+
+.outliner-filter-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.outliner-filter-input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-xs);
+  color: var(--text-lead);
+  font-size: 11px;
+  padding: 5px 8px;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.outliner-filter-input:focus {
+  border-color: var(--brand-primary);
+}
+
+.blender-outliner-tree {
+  max-height: 480px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.outliner-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s ease;
+}
+
+.outliner-item:hover {
+  background: var(--bg-hover);
+}
+
+.outliner-item.active {
+  background: rgba(37, 99, 235, 0.2);
+  border-left: 2px solid var(--brand-primary);
+}
+
+.outliner-chevron {
+  font-size: 9px;
+  color: var(--text-faint);
+  width: 12px;
+  text-align: center;
+}
+
+.outliner-folder-icon, .outliner-elem-icon {
+  font-size: 12px;
+}
+
+.outliner-name {
+  flex: 1;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outliner-name-strong {
+  flex: 1;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-lead);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outliner-count-pill {
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+  background: var(--bg-input);
+  color: var(--text-faint);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--rule-subtle);
+}
+
+.outliner-badge {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.outliner-eye-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  opacity: 0.75;
+  transition: all 0.12s ease;
+}
+
+.outliner-eye-btn:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+
+.outliner-eye-btn.dim {
+  opacity: 0.25;
+  filter: grayscale(1);
+}
+
+.outliner-children {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-left: 16px;
+  padding-left: 8px;
+  border-left: 1px solid var(--rule-subtle);
+}
+
+.element-row {
+  padding: 3px 6px;
+}
+
+.outliner-elem-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.outliner-elem-name {
+  font-size: 11px;
+  color: var(--text-lead);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outliner-elem-meta {
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
+
+.tab-icon {
+  font-size: 12px;
+  margin-right: 4px;
+}
+
