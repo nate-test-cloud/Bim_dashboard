@@ -12,16 +12,21 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string | null, info?: string) => void;
   autoRotate: boolean;
+  onToggleAutoRotate?: () => void;
+  onToggleWireframe?: () => void;
+  onToggleGrid?: () => void;
+  onToggleAxes?: () => void;
 }
 
+// Professional architectural engineering palette with high spatial contrast
 const COLORS: Record<string, number> = {
-  wall: 0x3b82f6,
-  window: 0x7dd3fc,
-  door: 0xf59e0b,
-  roof: 0x64748b,
-  floor: 0x334155,
-  structure: 0x8fa3bd,
-  other: 0x8b5cf6,
+  wall: 0xc8d1dc,      // Architectural off-white / concrete
+  window: 0x38bdf8,    // Crystalline cyan glass
+  door: 0xd97706,      // Architectural timber / bronze
+  roof: 0x1e293b,      // Modern dark corporate slate
+  floor: 0x475569,     // Structural slab concrete
+  structure: 0x3b82f6, // High-performance metallic steel
+  other: 0x6366f1,     // Corporate indigo accent
 };
 
 interface SceneRefs {
@@ -37,12 +42,6 @@ interface SceneRefs {
 const structIdsOf = (s: SceneRefs): string[] =>
   (s.struct?.userData.ids as string[] | undefined) ?? [];
 
-/**
- * Interactive Three.js viewer: orbit/zoom/pan, select, toggles, fit/reset.
- * Envelope elements are individual selectable meshes; structural parts
- * (potentially tens of thousands) render as one InstancedMesh and are
- * selectable by instance. The camera auto-fits whenever the model changes.
- */
 export default function Viewer3D(p: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<SceneRefs | null>(null);
@@ -51,14 +50,16 @@ export default function Viewer3D(p: Props) {
     instance: null,
   });
   const [azimuth, setAzimuth] = useState('N');
+  const [azimuthDeg, setAzimuthDeg] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [structCount, setStructCount] = useState(0);
+  const [viewPreset, setViewPreset] = useState<'iso' | 'top' | 'front' | 'side' | 'custom'>('iso');
   const stateRef = useRef(p);
   stateRef.current = p;
 
-  const fitCamera = () => {
+  const getModelBounds = () => {
     const s = sceneRef.current;
-    if (!s) return;
+    if (!s) return null;
     const box = new THREE.Box3();
     s.meshes.forEach((m) => {
       if (m.visible) box.expandByObject(m);
@@ -67,9 +68,17 @@ export default function Viewer3D(p: Props) {
       s.struct.computeBoundingBox();
       if (s.struct.boundingBox) box.union(s.struct.boundingBox);
     }
-    if (box.isEmpty()) return;
+    if (box.isEmpty()) return null;
     const center = box.getCenter(new THREE.Vector3());
-    const size = Math.max(box.getSize(new THREE.Vector3()).length(), 1);
+    const size = Math.max(box.getSize(new THREE.Vector3()).length(), 2);
+    return { box, center, size };
+  };
+
+  const fitCamera = () => {
+    const s = sceneRef.current;
+    const bounds = getModelBounds();
+    if (!s || !bounds) return;
+    const { center, size } = bounds;
     const dirv = new THREE.Vector3(0.75, 0.55, 0.9).normalize();
     s.camera.position.copy(center).addScaledVector(dirv, size * 0.9);
     s.camera.near = Math.max(0.01, size / 10000);
@@ -77,6 +86,32 @@ export default function Viewer3D(p: Props) {
     s.camera.updateProjectionMatrix();
     s.controls.target.copy(center);
     s.controls.update();
+    setViewPreset('iso');
+  };
+
+  const setCameraPreset = (preset: 'iso' | 'top' | 'front' | 'side') => {
+    const s = sceneRef.current;
+    const bounds = getModelBounds();
+    if (!s || !bounds) return;
+    const { center, size } = bounds;
+
+    if (preset === 'iso') {
+      const dirv = new THREE.Vector3(0.75, 0.65, 0.85).normalize();
+      s.camera.position.copy(center).addScaledVector(dirv, size * 0.95);
+    } else if (preset === 'top') {
+      s.camera.position.set(center.x, center.y + size * 1.35, center.z + 0.001);
+    } else if (preset === 'front') {
+      s.camera.position.set(center.x, center.y + size * 0.15, center.z + size * 1.3);
+    } else if (preset === 'side') {
+      s.camera.position.set(center.x + size * 1.3, center.y + size * 0.15, center.z);
+    }
+
+    s.camera.near = Math.max(0.01, size / 10000);
+    s.camera.far = size * 20 + 1000;
+    s.camera.updateProjectionMatrix();
+    s.controls.target.copy(center);
+    s.controls.update();
+    setViewPreset(preset);
   };
 
   // (re)build scene when model changes
@@ -87,29 +122,56 @@ export default function Viewer3D(p: Props) {
     setError(null);
     try {
       const W = mount.clientWidth || 600;
-      const H = 460;
+      const H = Math.max(mount.clientHeight || 520, 480);
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x050a14);
+      // Precision CAD / Architectural Studio Environment
+      scene.background = new THREE.Color(0x0e1117);
+      scene.fog = new THREE.FogExp2(0x0e1117, 0.0035);
+
       const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 2000);
-      camera.position.set(26, 20, 30);
-      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      camera.position.set(28, 22, 34);
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setSize(W, H);
       renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.1;
+
       mount.appendChild(renderer.domElement);
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
       controls.autoRotate = stateRef.current.autoRotate;
-      controls.autoRotateSpeed = 0.6;
+      controls.autoRotateSpeed = 0.75;
 
-      scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-      const dir = new THREE.DirectionalLight(0xffffff, 1.1);
-      dir.position.set(40, 60, 30);
-      scene.add(dir);
-      const grid = new THREE.GridHelper(60, 30, 0x38bdf8, 0x1e293b);
+      // Studio architectural lighting
+      const ambient = new THREE.AmbientLight(0x334155, 1.2);
+      scene.add(ambient);
+
+      const hemiLight = new THREE.HemisphereLight(0x94a3b8, 0x0f172a, 0.85);
+      hemiLight.position.set(0, 50, 0);
+      scene.add(hemiLight);
+
+      const sun = new THREE.DirectionalLight(0xfff8ed, 1.6);
+      sun.position.set(45, 65, 35);
+      sun.castShadow = true;
+      sun.shadow.mapSize.width = 1024;
+      sun.shadow.mapSize.height = 1024;
+      scene.add(sun);
+
+      const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.45);
+      fillLight.position.set(-30, 20, -30);
+      scene.add(fillLight);
+
+      // Precision CAD Grid
+      const grid = new THREE.GridHelper(80, 40, 0x334155, 0x1e2631);
       grid.name = 'grid';
+      grid.position.y = -0.02;
       grid.visible = stateRef.current.showGrid;
       scene.add(grid);
-      const axes = new THREE.AxesHelper(12);
+
+      const axes = new THREE.AxesHelper(14);
       axes.name = 'axes';
       axes.visible = stateRef.current.showAxes;
       scene.add(axes);
@@ -123,8 +185,8 @@ export default function Viewer3D(p: Props) {
       let struct: THREE.InstancedMesh | null = null;
 
       if (model.source === 'demo-tower') {
-        // Preserved abstract twisting tower from the original prototype.
-        const geo = new THREE.CylinderGeometry(12, 16, 50, 24, 15);
+        // High-tech twisting glass tower with corporate cobalt glaze
+        const geo = new THREE.CylinderGeometry(12, 16, 50, 28, 18);
         const pos = geo.attributes.position as THREE.BufferAttribute;
         for (let i = 0; i < pos.count; i++) {
           const yy = pos.getY(i);
@@ -136,29 +198,41 @@ export default function Viewer3D(p: Props) {
         }
         geo.computeVertexNormals();
         const mat = new THREE.MeshPhysicalMaterial({
-          color: 0x1e3a8a, metalness: 0.3, roughness: 0.25,
-          transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+          color: 0x2563eb,
+          metalness: 0.15,
+          roughness: 0.12,
+          transmission: 0.6,
+          transparent: true,
+          opacity: 0.78,
+          side: THREE.DoubleSide,
           wireframe: stateRef.current.wireframe,
         });
         const tower = new THREE.Mesh(geo, mat);
         tower.userData.eid = 'tower-shell';
         scene.add(tower);
         meshes.set('tower-shell', tower);
+
         const core = new THREE.Mesh(
-          new THREE.CylinderGeometry(4, 4, 52, 16),
-          new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.7, roughness: 0.3 }),
+          new THREE.CylinderGeometry(4, 4, 52, 20),
+          new THREE.MeshStandardMaterial({
+            color: 0x94a3b8,
+            metalness: 0.6,
+            roughness: 0.35,
+          }),
         );
         core.userData.eid = 'tower-core';
         scene.add(core);
         meshes.set('tower-core', core);
         setStructCount(0);
       } else {
-        // Structural parts → single InstancedMesh (fast for tens of thousands).
+        // Structural parts -> single InstancedMesh
         const structEls = model.elements.filter((el) => el.category === 'structure');
         if (structEls.length) {
           const geo = new THREE.BoxGeometry(1, 1, 1);
           const mat = new THREE.MeshStandardMaterial({
-            color: 0xffffff, metalness: 0.55, roughness: 0.45,
+            color: 0xffffff,
+            metalness: 0.6,
+            roughness: 0.4,
             wireframe: stateRef.current.wireframe,
           });
           struct = new THREE.InstancedMesh(geo, mat, structEls.length);
@@ -191,20 +265,44 @@ export default function Viewer3D(p: Props) {
           const c = el.center ?? { x: 0, y: 2, z: 0 };
           const geo = new THREE.BoxGeometry(Math.max(d.x, 0.05), Math.max(d.y, 0.05), Math.max(d.z, 0.05));
           const isGlass = el.category === 'window';
-          const mat = new THREE.MeshStandardMaterial({
-            color: COLORS[el.category] ?? COLORS.other,
-            transparent: isGlass,
-            opacity: isGlass ? 0.55 : 0.92,
-            metalness: isGlass ? 0.1 : 0.35,
-            roughness: isGlass ? 0.1 : 0.55,
-            wireframe: stateRef.current.wireframe,
-            emissive: new THREE.Color(0x000000),
-          });
+
+          const mat = isGlass
+            ? new THREE.MeshPhysicalMaterial({
+                color: COLORS.window,
+                transparent: true,
+                opacity: 0.65,
+                roughness: 0.08,
+                transmission: 0.7,
+                metalness: 0.1,
+                wireframe: stateRef.current.wireframe,
+                emissive: new THREE.Color(0x000000),
+              })
+            : new THREE.MeshStandardMaterial({
+                color: COLORS[el.category] ?? COLORS.other,
+                transparent: false,
+                opacity: 1,
+                metalness: el.category === 'roof' ? 0.2 : 0.08,
+                roughness: el.category === 'wall' ? 0.35 : 0.5,
+                wireframe: stateRef.current.wireframe,
+                emissive: new THREE.Color(0x000000),
+              });
+
           const mesh = new THREE.Mesh(geo, mat);
           mesh.position.set(c.x, c.y, c.z);
           if (el.rotation) mesh.quaternion.set(el.rotation[0], el.rotation[1], el.rotation[2], el.rotation[3]);
           mesh.userData.eid = el.id;
           mesh.visible = stateRef.current.visibleTypes[el.category] !== false;
+
+          // Crisp CAD profile edges (Forma / Revit aesthetic)
+          const edgesGeo = new THREE.EdgesGeometry(geo);
+          const edgesMat = new THREE.LineBasicMaterial({
+            color: isGlass ? 0x38bdf8 : 0x1e293b,
+            transparent: true,
+            opacity: isGlass ? 0.75 : 0.6,
+          });
+          const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+          mesh.add(edges);
+
           scene.add(mesh);
           meshes.set(el.id, mesh);
         }
@@ -212,6 +310,8 @@ export default function Viewer3D(p: Props) {
 
       const ray = new THREE.Raycaster();
       const ptr = new THREE.Vector2();
+
+      // Click selection
       const onClick = (ev: MouseEvent) => {
         const s = sceneRef.current;
         if (!s) return;
@@ -235,30 +335,75 @@ export default function Viewer3D(p: Props) {
       };
       renderer.domElement.addEventListener('click', onClick);
 
+      // Hover feedback cursor
+      const onPointerMove = (ev: MouseEvent) => {
+        const s = sceneRef.current;
+        if (!s) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        ptr.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+        ptr.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+        ray.setFromCamera(ptr, s.camera);
+        const targets: THREE.Object3D[] = [...s.meshes.values()].filter((m) => m.visible);
+        if (s.struct && s.struct.visible) targets.push(s.struct);
+        const hits = ray.intersectObjects(targets);
+        renderer.domElement.style.cursor = hits.length > 0 ? 'pointer' : 'grab';
+      };
+      renderer.domElement.addEventListener('pointermove', onPointerMove);
+
+      const onPointerDown = () => {
+        renderer.domElement.style.cursor = 'grabbing';
+      };
+      const onPointerUp = () => {
+        renderer.domElement.style.cursor = 'grab';
+      };
+      renderer.domElement.addEventListener('pointerdown', onPointerDown);
+      renderer.domElement.addEventListener('pointerup', onPointerUp);
+
       let raf = 0;
       const animate = () => {
         raf = requestAnimationFrame(animate);
         controls.update();
         renderer.render(scene, camera);
         const az = ((THREE.MathUtils.radToDeg(controls.getAzimuthalAngle()) % 360) + 360) % 360;
-        const label = az < 45 || az >= 315 ? 'N' : az < 135 ? 'E' : az < 225 ? 'S' : 'W';
+        setAzimuthDeg(Math.round(az));
+        const label =
+          az < 22.5 || az >= 337.5
+            ? 'N'
+            : az < 67.5
+              ? 'NE'
+              : az < 112.5
+                ? 'E'
+                : az < 157.5
+                  ? 'SE'
+                  : az < 202.5
+                    ? 'S'
+                    : az < 247.5
+                      ? 'SW'
+                      : az < 292.5
+                        ? 'W'
+                        : 'NW';
         setAzimuth((prev) => (prev === label ? prev : label));
       };
       animate();
 
       const onResize = () => {
         const w = mount.clientWidth || 600;
-        camera.aspect = w / H;
+        const h = mount.clientHeight || 520;
+        camera.aspect = w / h;
         camera.updateProjectionMatrix();
-        renderer.setSize(w, H);
+        renderer.setSize(w, h);
       };
       window.addEventListener('resize', onResize);
       sceneRef.current = { scene, camera, renderer, controls, meshes, struct, ray };
       fitCamera();
+
       return () => {
         cancelAnimationFrame(raf);
         window.removeEventListener('resize', onResize);
         renderer.domElement.removeEventListener('click', onClick);
+        renderer.domElement.removeEventListener('pointermove', onPointerMove);
+        renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+        renderer.domElement.removeEventListener('pointerup', onPointerUp);
         scene.traverse((o) => {
           const mesh = o as THREE.Mesh;
           if (mesh.geometry) mesh.geometry.dispose();
@@ -274,18 +419,22 @@ export default function Viewer3D(p: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.model]);
 
-  // apply live toggles + selection highlight without rebuilding
+  // Apply live toggles + selection highlight without rebuilding
   useEffect(() => {
     const s = sceneRef.current;
     if (!s) return;
     s.controls.autoRotate = p.autoRotate;
-    s.scene.getObjectByName('grid')!.visible = p.showGrid;
-    s.scene.getObjectByName('axes')!.visible = p.showAxes;
+    const gridObj = s.scene.getObjectByName('grid');
+    if (gridObj) gridObj.visible = p.showGrid;
+    const axesObj = s.scene.getObjectByName('axes');
+    if (axesObj) axesObj.visible = p.showAxes;
+
     if (s.struct) {
       s.struct.visible = p.visibleTypes['structure'] !== false;
       (s.struct.material as THREE.MeshStandardMaterial).wireframe = p.wireframe;
     }
-    // Clear previous highlight.
+
+    // Clear previous highlight
     const prev = selectedRef.current;
     if (prev.mesh) {
       const m = prev.mesh.material as THREE.MeshStandardMaterial;
@@ -297,22 +446,25 @@ export default function Viewer3D(p: Props) {
       if (s.struct.instanceColor) s.struct.instanceColor.needsUpdate = true;
     }
     selectedRef.current = { mesh: null, instance: null };
+
+    // Highlight selected element with vibrant corporate cobalt glow
     if (p.selectedId) {
       const mesh = s.meshes.get(p.selectedId) ?? null;
       if (mesh) {
         const m = mesh.material as THREE.MeshStandardMaterial;
-        m.emissive = new THREE.Color(0x0ea5e9);
-        m.emissiveIntensity = 0.55;
+        m.emissive = new THREE.Color(0x2563eb);
+        m.emissiveIntensity = 0.65;
         selectedRef.current = { mesh, instance: null };
       } else if (s.struct) {
         const idx = structIdsOf(s).indexOf(p.selectedId);
         if (idx >= 0) {
-          s.struct.setColorAt(idx, new THREE.Color(0x0ea5e9));
+          s.struct.setColorAt(idx, new THREE.Color(0x2563eb));
           if (s.struct.instanceColor) s.struct.instanceColor.needsUpdate = true;
           selectedRef.current = { mesh: null, instance: idx };
         }
       }
     }
+
     s.meshes.forEach((mesh, eid) => {
       const el = p.model.elements.find((e) => e.id === eid);
       const cat = el?.category ?? 'other';
@@ -322,31 +474,119 @@ export default function Viewer3D(p: Props) {
   }, [p.wireframe, p.showGrid, p.showAxes, p.visibleTypes, p.selectedId, p.autoRotate, p.model]);
 
   return (
-    <div>
+    <div className="viewer-container">
       <div className="viewer-wrap">
-        <div ref={mountRef} style={{ width: '100%', height: 460 }} />
-        <div className="viewer-overlay">
-          Interactive BIM viewer (Three.js WebGL)
-          <br />
-          <span style={{ fontSize: 10 }}>Drag rotate • Scroll zoom • Right-drag pan • Click element</span>
+        <div ref={mountRef} className="viewer-canvas" style={{ width: '100%', height: '100%' }} />
+
+        {/* Floating Precision CAD Viewport Toolbar */}
+        <div className="viewer-glass-dock">
+          <div className="viewer-preset-group">
+            <button
+              className={`dock-btn ${viewPreset === 'iso' ? 'active' : ''}`}
+              onClick={() => setCameraPreset('iso')}
+              title="Isometric Perspective (3D)"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5"/><path d="M12 12v9"/><path d="M12 12L4 7.5"/></svg>
+              <span>3D</span>
+            </button>
+            <button
+              className={`dock-btn ${viewPreset === 'top' ? 'active' : ''}`}
+              onClick={() => setCameraPreset('top')}
+              title="Plan / Top View"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+              <span>Top</span>
+            </button>
+            <button
+              className={`dock-btn ${viewPreset === 'front' ? 'active' : ''}`}
+              onClick={() => setCameraPreset('front')}
+              title="Elevation / Front View"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="3" y1="19" x2="21" y2="19"/></svg>
+              <span>Front</span>
+            </button>
+            <button
+              className={`dock-btn ${viewPreset === 'side' ? 'active' : ''}`}
+              onClick={() => setCameraPreset('side')}
+              title="Profile / Side View"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v14"/><line x1="2" y1="19" x2="22" y2="19"/></svg>
+              <span>Side</span>
+            </button>
+          </div>
+
+          <div className="dock-separator" />
+
+          <div className="viewer-action-group">
+            <button className="dock-btn" onClick={fitCamera} title="Center and Fit Viewport">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M3 12h3m12 0h3M12 3v3m0 12v3"/></svg>
+              <span>Fit</span>
+            </button>
+            {p.onToggleAutoRotate && (
+              <button
+                className={`dock-btn ${p.autoRotate ? 'active' : ''}`}
+                onClick={p.onToggleAutoRotate}
+                title="Toggle Turntable Orbit"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-1.19"/></svg>
+                <span>Orbit</span>
+              </button>
+            )}
+            {p.onToggleWireframe && (
+              <button
+                className={`dock-btn ${p.wireframe ? 'active' : ''}`}
+                onClick={p.onToggleWireframe}
+                title="Toggle Wireframe Mesh"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polygon points="2 17 12 22 22 17 12 12 2 17"/></svg>
+                <span>Wire</span>
+              </button>
+            )}
+            {p.onToggleGrid && (
+              <button
+                className={`dock-btn ${p.showGrid ? 'active' : ''}`}
+                onClick={p.onToggleGrid}
+                title="Toggle CAD Grid"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+                <span>Grid</span>
+              </button>
+            )}
+            {p.onToggleAxes && (
+              <button
+                className={`dock-btn ${p.showAxes ? 'active' : ''}`}
+                onClick={p.onToggleAxes}
+                title="Toggle Spatial Axes (XYZ)"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
+                <span>Axes</span>
+              </button>
+            )}
+          </div>
         </div>
-        <div className="viewer-tools">
-          <button onClick={fitCamera}>Fit view</button>
-          <button onClick={fitCamera}>Reset camera</button>
-        </div>
-        <div className="viewer-bottom">
-          <span>
-            Orientation: <strong className="mono">{azimuth}</strong>
-          </span>
-          <span>
-            Elements: <strong className="mono">{p.model.elements.length}</strong>
-            {structCount > 0 && <> (incl. {structCount} structural, instanced)</>} •{' '}
-            {p.model.geometryFidelity === 'actual'
-              ? 'actual geometry'
-              : p.model.geometryFidelity === 'approximate'
-                ? 'bounding boxes from IFC geometry'
-                : 'sample geometry'}
-          </span>
+
+
+        {/* Bottom Floating Status Bar */}
+        <div className="viewer-bottom-hud">
+          <div className="hud-pill">
+            <span className="hud-indicator" />
+            <span className="hud-label">Heading:</span>
+            <strong className="mono">{azimuth} ({azimuthDeg}°)</strong>
+          </div>
+          <div className="hud-pill">
+            <span className="hud-label">Elements:</span>
+            <strong className="mono">{p.model.elements.length}</strong>
+            {structCount > 0 && <span className="hud-subtle">({structCount} structural)</span>}
+          </div>
+          <div className="hud-pill">
+            <span className="hud-tag">
+              {p.model.geometryFidelity === 'actual'
+                ? '✓ High Fidelity Geometry'
+                : p.model.geometryFidelity === 'approximate'
+                  ? 'Bounding Volumes'
+                  : 'Parametric Sample'}
+            </span>
+          </div>
         </div>
       </div>
       {error && <div className="errbox">{error}</div>}

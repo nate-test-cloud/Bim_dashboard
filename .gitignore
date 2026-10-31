@@ -27,3 +27,4 @@ models/
 *.sw?
 tmp/
 *.jpeg
+*.png

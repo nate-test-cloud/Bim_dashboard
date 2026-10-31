@@ -91,7 +91,12 @@ const DEFAULT_ENV: EnvInputs = {
 };
 
 function ProvTag({ v }: { v: ProvValue }) {
-  return <span className={`prov ${v.provenance}`}>{PROVENANCE_LABEL[v.provenance]}</span>;
+  const code = v.provenance === 'extracted' ? 'IFC' : v.provenance === 'derived' ? 'GEO' : 'STD';
+  return (
+    <span className={`prov ${v.provenance}`} title={PROVENANCE_LABEL[v.provenance]}>
+      {code}
+    </span>
+  );
 }
 
 function SliderRow(props: {
@@ -99,13 +104,15 @@ function SliderRow(props: {
   tip?: string; onChange: (v: number) => void; prov?: ProvValue;
 }) {
   return (
-    <div className="ctl">
-      <div className="row">
-        <label>
+    <div className="ctl" style={{ marginBottom: 8 }}>
+      <div className="row" style={{ marginBottom: 2 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-body)' }}>
           {props.tip ? <span className="tooltip" data-tip={props.tip}>{props.label}</span> : props.label}
           {props.prov && <ProvTag v={props.prov} />}
         </label>
-        <span className="val">{props.value}<span style={{ color: '#64748b', fontWeight: 400 }}> {props.unit}</span></span>
+        <span className="mono" style={{ fontSize: 12, color: 'var(--text-lead)', fontWeight: 600 }}>
+          {props.value}<span style={{ color: 'var(--text-faint)', fontWeight: 400, fontSize: 11 }}> {props.unit}</span>
+        </span>
       </div>
       <input
         type="range" aria-label={props.label}
@@ -138,6 +145,7 @@ export default function App() {
   const [isLoadingClimate, setIsLoadingClimate] = useState(false);
   const [showLocDropdown, setShowLocDropdown] = useState(false);
   const [activeClimateMode, setActiveClimateMode] = useState<'current' | 'daylight' | 'summer' | 'winter'>('daylight');
+  const [activeArchetype, setActiveArchetype] = useState<'arid' | 'tropical' | 'temperate' | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
   const searchDebounceRef = useRef<any>(null);
 
@@ -152,6 +160,8 @@ export default function App() {
   // dialogs
   const [dlg, setDlg] = useState<null | 'bim' | 'climate' | 'help' | 'settings' | 'plugins'>(null);
   const [tab, setTab] = useState<'charts' | 'scenarios' | 'sustain' | 'data'>('charts');
+  const [inspectorTab, setInspectorTab] = useState<'envelope' | 'climate' | 'specs' | 'model'>('envelope');
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // BIM import state
   const [importLog, setImportLog] = useState<string[]>([]);
@@ -387,7 +397,25 @@ export default function App() {
     }
   };
 
+  const handleApplyArchetype = (key: 'arid' | 'tropical' | 'temperate') => {
+    setActiveArchetype(key);
+    setSiteLocation(null);
+    setSiteClimate(null);
+    setLocSearchQuery('');
+    const p = CLIMATE_PRESETS[key];
+    setEnv((e) => ({
+      ...e,
+      outdoorTempC: p.env.outdoorTempC,
+      solarIrradianceWm2: p.env.solarIrradianceWm2,
+      cloudCoverPct: p.env.cloudCoverPct,
+      windSpeedMs: p.env.windSpeedMs,
+      relHumidityPct: p.env.relHumidityPct,
+    }));
+    setNotice({ kind: 'ok', text: `Applied ${p.label} preset. Parameters are fully editable below.` });
+  };
+
   const handleSelectLocation = async (loc: SiteLocation) => {
+    setActiveArchetype(null);
     setSiteLocation(loc);
     setShowLocDropdown(false);
     setLocSearchQuery(`${loc.name}${loc.country ? ', ' + loc.country : ''}`);
@@ -656,76 +684,59 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* ================= header ================= */}
+      {/* ================= Swiss Architectural CAD Header ================= */}
       <header className="topbar">
         <div className="brand">
-          {projectName} <span className="accent">BIM Sustainability Analytics</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 21h18M3 7l9-4 9 4M4 7v14M20 7v14M10 21V11h4v10"/>
+          </svg>
+          <span className="brand-title">ENVELOPE</span>
+          <span className="brand-subtitle">STUDIO</span>
+          <span className="brand-sep">/</span>
+          <span className="brand-model">{model.name}</span>
+          <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginLeft: 4 }}>({modelStatus})</span>
         </div>
-        <span className="badge info" title="BIM import state">{modelStatus}</span>
+
         {siteLocation && (
-          <span
-            className="badge ok"
-            title={`Site: ${siteLocation.name}, ${siteLocation.country} (${siteLocation.latitude.toFixed(2)}°, ${siteLocation.longitude.toFixed(2)}°)`}
-          >
-            📍 Site: {siteLocation.name}
-          </span>
+          <div className="topbar-meta">
+            <span className="topbar-loc">📍 {siteLocation.name}, {siteLocation.country}</span>
+            <span className="mono topbar-cond">{env.outdoorTempC}°C · {env.solarIrradianceWm2} W/m²</span>
+          </div>
         )}
-        <span className="badge warn" title="Simplified physics — not a validated simulation engine">
-          Mode: Analytical / Demo
-        </span>
+
         <div style={{ flex: 1 }} />
-        <div className="menu">
-          <button>▤ File ▾</button>
-          <div className="drop">
-            <button onClick={() => { setImportLog([]); setImportProgress(0); setDlg('bim'); }}>⇪ Import BIM model (.ifc / .json)</button>
-            <button onClick={() => setDlg('climate')}>⇪ Import climate data (CSV)</button>
-            <div className="sep" />
-            <button onClick={() => { try { exportPdf(bundle()); } catch (e) { setNotice({ kind: 'err', text: `PDF export failed: ${e instanceof Error ? e.message : e}` }); } }}>⤓ Export analytics report (PDF)</button>
-            <button onClick={() => downloadText('analysis.csv', toCsv(bundle()), 'text/csv')}>⤓ Export data (CSV)</button>
-            <button onClick={() => downloadText('analysis.json', toJson(bundle()), 'application/json')}>⤓ Export data (JSON)</button>
-            <div className="sep" />
-            <button onClick={persist}>💾 Save project (local)</button>
-          </div>
+
+        {/* Viewport Mode Switcher */}
+        <div className="view-mode-tabs">
+          <button className={tab === 'charts' ? 'active' : ''} onClick={() => setTab('charts')}>
+            Analytics
+          </button>
+          <button className={tab === 'sustain' ? 'active' : ''} onClick={() => setTab('sustain')}>
+            Strategies
+          </button>
+          <button className={tab === 'scenarios' ? 'active' : ''} onClick={() => setTab('scenarios')}>
+            Scenarios ({scenarios.length})
+          </button>
+          <button className={tab === 'data' ? 'active' : ''} onClick={() => setTab('data')}>
+            Data
+          </button>
         </div>
-        <div className="menu">
-          <button>Sustainability ▾</button>
-          <div className="drop">
-            <button onClick={() => setTab('sustain')}>Building envelope optimization</button>
-            <button onClick={() => setTab('sustain')}>Passive solar strategies</button>
-            <button onClick={() => setTab('sustain')}>Natural ventilation assessment</button>
-            <button onClick={() => setTab('sustain')}>Green roof &amp; wall options</button>
-          </div>
+
+        {/* Action Controls */}
+        <div className="topbar-actions">
+          <button className="btn" onClick={() => { setImportLog([]); setImportProgress(0); setDlg('bim'); }} title="Import IFC or JSON BIM model">
+            Import IFC
+          </button>
+          <button className="btn" onClick={() => { try { exportPdf(bundle()); } catch (e) { setNotice({ kind: 'err', text: `PDF export failed: ${e instanceof Error ? e.message : e}` }); } }} title="Export Architectural Report">
+            Export PDF
+          </button>
+          <button className="btn" onClick={() => downloadText('analysis.csv', toCsv(bundle()), 'text/csv')} title="Export Numerical Data">
+            CSV
+          </button>
+          <button className="btn" onClick={() => setDlg('settings')} title="Settings & Preferences">
+            ⚙
+          </button>
         </div>
-        <div className="menu">
-          <button>Analysis tools ▾</button>
-          <div className="drop">
-            {INTEGRATIONS.map((i) => (
-              <div className="row" key={i.name} style={{ fontSize: 12 }}>
-                <span className={`dot ${i.status === 'connected' ? 'green' : i.status === 'not-configured' ? 'amber' : 'grey'}`} />
-                {i.name} — <em style={{ color: '#93a1b8' }}>{i.status.replace('-', ' ')}</em>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="menu">
-          <button>View ▾</button>
-          <div className="drop">
-            <button onClick={() => setShowGrid((v) => !v)}>Grid: {showGrid ? 'on' : 'off'}</button>
-            <button onClick={() => setShowAxes((v) => !v)}>Axes: {showAxes ? 'on' : 'off'}</button>
-            <button onClick={() => setWireframe((v) => !v)}>Wireframe: {wireframe ? 'on' : 'off'}</button>
-            <button onClick={() => setAutoRotate((v) => !v)}>Auto-rotate: {autoRotate ? 'on' : 'off'}</button>
-          </div>
-        </div>
-        <div className="menu">
-          <button>? Help ▾</button>
-          <div className="drop">
-            <button onClick={() => setDlg('help')}>Methodology &amp; documentation</button>
-            <button onClick={() => setDlg('settings')}>⚙ Settings</button>
-          </div>
-        </div>
-        <button className="btn" onClick={() => setDlg('plugins')}>
-          ⚙ Active plugins ({INTEGRATIONS.filter((i) => i.status === 'connected').length} connected)
-        </button>
       </header>
 
       {notice && (
@@ -736,630 +747,593 @@ export default function App() {
         </div>
       )}
 
-      {/* ================= workspace ================= */}
-      <div className="workspace">
-        {/* -------- left -------- */}
-        <aside className="panel leftcol">
-          <h2 className="section-title">Model &amp; environmental controls</h2>
+      {/* ================= CAD & STUDIO WORKSPACE ================= */}
+      <div className="cad-workspace">
+        {/* Full-Bleed 3D Viewport Hero */}
+        <div className="cad-stage">
+          <Viewer3D
+            model={model}
+            wireframe={wireframe}
+            showGrid={showGrid}
+            showAxes={showAxes}
+            visibleTypes={visibleTypes}
+            selectedId={selectedId}
+            onSelect={(id) => setSelectedId(id)}
+            autoRotate={autoRotate}
+            onToggleAutoRotate={() => setAutoRotate((v) => !v)}
+            onToggleWireframe={() => setWireframe((v) => !v)}
+            onToggleGrid={() => setShowGrid((v) => !v)}
+            onToggleAxes={() => setShowAxes((v) => !v)}
+          />
 
-          <details className="coll" open>
-            <summary>① Site location &amp; climatic data</summary>
-            <div className="body" style={{ position: 'relative' }}>
-              <div className="loc-search-box">
-                <div className="loc-input-wrap">
-                  <input
-                    className="loc-input"
-                    type="text"
-                    placeholder="Search site location (e.g. London, Dubai, Tokyo)..."
-                    value={locSearchQuery}
-                    onChange={(e) => handleSearchQueryChange(e.target.value)}
-                    onFocus={() => {
-                      if (locSuggestions.length > 0) setShowLocDropdown(true);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        executeSearchNow();
-                      }
-                    }}
-                    aria-label="Site location search"
-                  />
-                  {locSearchQuery && (
+          {/* Floating High-Density Viewport Telemetry HUD */}
+          <div className="cad-telemetry-hud">
+            <div className="hud-metric">
+              <span className="hud-label">OPERATIVE</span>
+              <span className="hud-val">{results.operativeTempMaintainedC.toFixed(1)}°C</span>
+              <span className="hud-sub">{results.comfortStatus}</span>
+            </div>
+            <div className="hud-sep" />
+            <div className="hud-metric">
+              <span className="hud-label">DEMAND ({results.activeMode.toUpperCase()})</span>
+              <span className="hud-val">{Math.max(heatKW, coolKW).toFixed(1)} kW</span>
+              <span className="hud-sub">h {heatKW.toFixed(1)} · c {coolKW.toFixed(1)}</span>
+            </div>
+            <div className="hud-sep" />
+            <div className="hud-metric">
+              <span className="hud-label">SOLAR GAIN</span>
+              <span className="hud-val">{(results.solarGainW / 1000).toFixed(1)} kW</span>
+              <span className="hud-sub">transmitted</span>
+            </div>
+            <div className="hud-sep" />
+            <div className="hud-metric">
+              <span className="hud-label">ANNUAL EUI</span>
+              <span className="hud-val">{eui?.toFixed(0) ?? '—'} <span className="hud-unit">kWh/m²</span></span>
+              <span className="hud-sub">target: {design.euiTargetKwhM2Yr}</span>
+            </div>
+          </div>
+
+          {/* Floating Viewport Tool Controls (Bottom Right) */}
+          <div className="cad-viewport-bottom-bar">
+            <div className="cad-pill-group">
+              <button
+                className={`cad-btn-pill ${model.name === 'Sample Office (Parametric)' ? 'active' : ''}`}
+                onClick={loadSample}
+                title="Load Parametric Sample Building"
+              >
+                Sample Office
+              </button>
+              <button
+                className={`cad-btn-pill ${model.name.includes('Tower') ? 'active' : ''}`}
+                onClick={loadDemoTower}
+                title="Load Twisting Glass Tower"
+              >
+                Tower Model
+              </button>
+              <button
+                className="cad-btn-pill highlight"
+                onClick={() => { setImportLog([]); setImportProgress(0); setDlg('bim'); }}
+                title="Import IFC / JSON BIM Model"
+              >
+                Import IFC…
+              </button>
+            </div>
+            <div className="cad-pill-group">
+              {(['wall', 'window', 'roof', 'floor', 'structure'] as const).map((t) => {
+                const isVisible = visibleTypes[t] !== false;
+                return (
+                  <button
+                    key={t}
+                    className={`cad-tag-pill ${isVisible ? 'active' : ''}`}
+                    onClick={() => setVisibleTypes((v) => ({ ...v, [t]: !v[t] }))}
+                    title={`Toggle ${t} visibility`}
+                  >
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Collapsible Bottom Drawer for Analytical Charts */}
+          <div className={`cad-bottom-drawer ${drawerOpen ? 'open' : 'closed'}`}>
+            <div
+              className="drawer-handle"
+              onClick={() => setDrawerOpen((o) => !o)}
+              title={drawerOpen ? 'Click to collapse analytics drawer' : 'Click to expand analytics drawer'}
+            >
+              <div className="drawer-handle-left">
+                <span className="drawer-icon">{drawerOpen ? '▼' : '▲'}</span>
+                <span className="drawer-title">ANALYTICAL CHARTS &amp; PARAMETRIC SWEEPS</span>
+                <span className="drawer-badge">{tab.toUpperCase()}</span>
+              </div>
+              <div className="drawer-handle-right">
+                <span className="drawer-hint">{drawerOpen ? 'Collapse' : 'Expand detailed sweeps & comparisons'}</span>
+              </div>
+            </div>
+
+            {drawerOpen && (
+              <div className="drawer-body">
+                <div className="drawer-tabs">
+                  {(['charts', 'scenarios', 'sustain', 'data'] as const).map((t) => (
                     <button
-                      className="loc-clear-btn"
-                      title="Clear search"
-                      onClick={() => {
-                        setLocSearchQuery('');
-                        setLocSuggestions([]);
-                        setShowLocDropdown(false);
-                      }}
+                      key={t}
+                      className={`drawer-tab-btn ${tab === t ? 'active' : ''}`}
+                      onClick={() => setTab(t)}
                     >
-                      ✕
+                      {t === 'charts' ? 'Parametric Sweeps' : t === 'scenarios' ? `Design Scenarios (${scenarios.length})` : t === 'sustain' ? 'Strategies' : 'Assumptions & Export'}
                     </button>
-                  )}
+                  ))}
                 </div>
-                <button
-                  className="btn"
-                  style={{ padding: '7px 11px', whiteSpace: 'nowrap' }}
-                  onClick={executeSearchNow}
-                  disabled={isSearchingLoc}
-                  title="Search site location"
-                >
-                  {isSearchingLoc ? '⏳' : '🔍 Find'}
-                </button>
 
-                {showLocDropdown && (
-                  <>
-                    <div
-                      style={{ position: 'fixed', inset: 0, zIndex: 45 }}
-                      onClick={() => setShowLocDropdown(false)}
-                    />
-                    <div className="loc-dropdown">
-                      {locSuggestions.length > 0 ? (
-                        locSuggestions.map((loc) => (
-                          <button
-                            key={`${loc.id}-${loc.latitude}`}
-                            className="loc-item"
-                            onClick={() => handleSelectLocation(loc)}
-                          >
-                            <span className="loc-item-title">
-                              📍 {loc.name}{loc.admin1 ? `, ${loc.admin1}` : ''}
-                              <span style={{ fontWeight: 400, color: '#93a1b8', fontSize: 11 }}>({loc.country})</span>
-                            </span>
-                            <span className="loc-item-sub">
-                              {loc.latitude.toFixed(2)}°N, {loc.longitude.toFixed(2)}°E
-                              {loc.elevation != null ? ` • Alt: ${loc.elevation}m` : ''}
-                              {loc.timezone ? ` • ${loc.timezone}` : ''}
-                            </span>
-                          </button>
-                        ))
-                      ) : (
-                        <div style={{ padding: '8px 10px', fontSize: 12, color: '#93a1b8' }}>
-                          No matching locations found.
+                <div className="drawer-content">
+                  {tab === 'charts' && (
+                    <div className="drawer-grid">
+                      <div className="drawer-chart-card">
+                        <div className="drawer-card-title">HVAC Load vs Outdoor Temperature (Live)</div>
+                        <TempSweepChart data={tempSweep} />
+                      </div>
+                      <div className="drawer-chart-card">
+                        <div className="drawer-card-title">Solar Irradiance vs Transmitted Gain</div>
+                        <SolarSweepChart data={solarSweep} />
+                      </div>
+                      <div className="drawer-chart-card">
+                        <div className="drawer-card-title">Heating / Cooling Split (kW)</div>
+                        <SimpleBar data={[{ name: 'Heating', value: +heatKW.toFixed(2) }, { name: 'Cooling', value: +coolKW.toFixed(2) }, { name: 'Solar gain', value: +(results.solarGainW / 1000).toFixed(2) }]} />
+                      </div>
+                      <div className="drawer-chart-card">
+                        <div className="drawer-card-title">Envelope Conduction Magnitude (|Q| W)</div>
+                        <SimpleBar data={results.transmissionByComponent.map((c) => ({ name: c.label, value: +c.valueW.toFixed(0) }))} />
+                      </div>
+                      <div className="drawer-chart-card">
+                        <div className="drawer-card-title">{siteLocation ? `Site Climate Scenarios (kW)` : `Climate Presets (kW)`}</div>
+                        <GroupedBar data={presetCompare} series={[{ key: 'heating_kW', color: '#f87171' }, { key: 'cooling_kW', color: '#38bdf8' }]} />
+                      </div>
+                      {monthlyLoads && (
+                        <div className="drawer-chart-card">
+                          <div className="drawer-card-title">
+                            {climate ? 'Monthly Weather Mean Loads (kW)' : `Monthly Seasonal Loads for ${siteClimate?.location.name ?? 'site'} (kW)`}
+                          </div>
+                          <GroupedBar data={monthlyLoads} series={[{ key: 'heating_kW', color: '#f87171' }, { key: 'cooling_kW', color: '#38bdf8' }]} />
+                        </div>
+                      )}
+                      {scenarioRows.length > 1 && (
+                        <div className="drawer-chart-card">
+                          <div className="drawer-card-title">Scenario Energy Comparison (kW)</div>
+                          <GroupedBar data={scenarioRows} series={[{ key: 'heating_kW', color: '#f87171' }, { key: 'cooling_kW', color: '#38bdf8' }, { key: 'solar_kW', color: '#fbbf24' }]} />
                         </div>
                       )}
                     </div>
-                  </>
-                )}
-              </div>
+                  )}
 
-              {!siteLocation && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ fontSize: 11, color: '#93a1b8', marginBottom: 4 }}>
-                    Quick site presets:
-                  </div>
-                  <div className="loc-popular-pills">
-                    {POPULAR_SITES.slice(0, 6).map((site) => (
-                      <button
-                        key={site.id}
-                        className="loc-pill"
-                        onClick={() => handleSelectLocation(site)}
-                      >
-                        📍 {site.name}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="hint" style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>
-                    Enter any city, site address, or global coordinates to pull real-time solar irradiance, ambient temperature, humidity, and wind speed.
-                  </div>
-                </div>
-              )}
+                  {tab === 'scenarios' && (
+                    <div style={{ padding: 12 }}>
+                      <div className="btnrow" style={{ marginBottom: 12 }}>
+                        <button className="btn primary" onClick={saveScenario}>＋ Save current design as scenario</button>
+                        <button className="btn" disabled={scenarios.length === 0} onClick={() => { setScenarios([]); setBaselineId(null); }}>Restore baseline (clear all)</button>
+                      </div>
+                      {scenarios.length === 0 && (
+                        <div className="hint" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          No scenarios saved yet. Use scenarios to compare alternative glazing, insulation, and shading options against baseline.
+                        </div>
+                      )}
+                      {scenarios.map((s) => {
+                        const r = resultsFor(s);
+                        const isBase = baseline && baseline.id === s.id;
+                        return (
+                          <div key={s.id} className="selcard" style={{ marginTop: 8 }}>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <input
+                                className="txt" value={s.name} style={{ maxWidth: 220 }}
+                                onChange={(e) => setScenarios((sc) => sc.map((x) => (x.id === s.id ? { ...x, name: e.target.value } : x)))}
+                                aria-label="Scenario name"
+                              />
+                              {isBase && <span className="badge ok">baseline</span>}
+                              <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{new Date(s.createdAt).toLocaleString()}</span>
+                              <div style={{ flex: 1 }} />
+                              <button className="btn" onClick={() => { setBaselineId(s.id); setNotice({ kind: 'ok', text: `"${s.name}" set as baseline.` }); }}>Set baseline</button>
+                              <button className="btn" onClick={() => { setEnv({ ...s.env }); setDesign(JSON.parse(JSON.stringify(s.design))); setNotice({ kind: 'ok', text: `Restored "${s.name}" into live controls.` }); }}>Restore</button>
+                              <button className="btn" onClick={() => { const c = { ...s, id: uuid(), name: s.name + ' (copy)' }; setScenarios((sc) => [...sc, c]); }}>Duplicate</button>
+                              <button className="btn danger" onClick={() => { setScenarios((sc) => sc.filter((x) => x.id !== s.id)); if (baselineId === s.id) setBaselineId(null); }}>Delete</button>
+                            </div>
+                            <div style={{ fontSize: 11.5, marginTop: 4, color: 'var(--text-muted)' }} className="mono">
+                              heat {(r.heatingLoadW / 1000).toFixed(2)} kW • cool {(r.coolingLoadW / 1000).toFixed(2)} kW • solar {(r.solarGainW / 1000).toFixed(2)} kW • EUI {r.euiIllustrative?.toFixed(1) ?? 'n/a'} • WWR {(s.design.wwr.value * 100).toFixed(0)}%
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {scenarios.length >= 1 && baseline && (
+                        <div style={{ overflowX: 'auto', marginTop: 14 }}>
+                          <table className="cmp">
+                            <thead>
+                              <tr><th>Scenario vs “{baseline.name}”</th><th>Δ heat kW</th><th>Δ cool kW</th><th>Δ EUI</th></tr>
+                            </thead>
+                            <tbody>
+                              {scenarios.map((s) => {
+                                const r = resultsFor(s);
+                                const dh = r.heatingLoadW / 1000 - baselineResults!.heatingLoadW / 1000;
+                                const dc = r.coolingLoadW / 1000 - baselineResults!.coolingLoadW / 1000;
+                                const de = r.euiIllustrative != null && baselineResults!.euiIllustrative != null ? r.euiIllustrative - baselineResults!.euiIllustrative! : null;
+                                return (
+                                  <tr key={s.id}>
+                                    <td>{s.name}</td>
+                                    <td>{dh.toFixed(2)} ({pct(dh, baselineResults!.heatingLoadW / 1000)})</td>
+                                    <td>{dc.toFixed(2)} ({pct(dc, baselineResults!.coolingLoadW / 1000)})</td>
+                                    <td>{de != null ? `${de.toFixed(1)} (${pct(de, baselineResults!.euiIllustrative ?? 0)})` : 'n/a'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-              {isLoadingClimate && (
-                <div style={{ marginTop: 8, padding: '8px 10px', background: '#0d1628', borderRadius: 8, fontSize: 12, color: 'var(--accent)' }}>
-                  ⏳ Loading live climatic data for {siteLocation?.name || 'site'}…
-                </div>
-              )}
+                  {tab === 'sustain' && (
+                    <div style={{ padding: 12, fontSize: 12.5 }}>
+                      <div className="section-title">Envelope Upgrades</div>
+                      <div className="btnrow" style={{ flexWrap: 'wrap', gap: 6 }}>
+                        <button className="btn" onClick={() => { setD('glazingU', 0.8); setD('shgc', 0.25); }}>Triple Glazing (U 0.8, SHGC 0.25)</button>
+                        <button className="btn" onClick={() => setD('shadingFactor', 0.55)}>External Louvers (×0.55)</button>
+                        <button className="btn" onClick={() => setD('wallU', 0.2)}>Wall Insulation+ (U 0.2)</button>
+                        <button className="btn" onClick={() => setD('roofU', 0.15)}>Roof Insulation+ (U 0.15)</button>
+                        <button className="btn" onClick={() => setD('wwr', 0.3)}>Optimize WWR → 30%</button>
+                      </div>
+                      <div className="section-title" style={{ marginTop: 16 }}>Passive Solar &amp; Natural Ventilation</div>
+                      <div style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                        Current orientation: {design.orientationDeg}° • WWR: {(design.wwr.value * 100).toFixed(0)}% • Shading transmit: ×{design.shadingFactor.value} • Glazing SHGC: {design.shgc.value}.
+                        Natural ventilation potential: <strong className={results.natVentPotential === 'high' ? 'g' : results.natVentPotential === 'moderate' ? 'a' : 'r'}>{results.natVentPotential.toUpperCase()}</strong>. {results.natVentNote}
+                      </div>
+                      {vsBase && baseline && (
+                        <div className="hint" style={{ marginTop: 10, color: 'var(--text-muted)' }}>
+                          vs baseline “{baseline.name}”: Δ cooling {vsBase.cool >= 0 ? '+' : ''}{vsBase.cool.toFixed(2)} kW
+                          ({pct(vsBase.cool, baselineResults!.coolingLoadW / 1000)}) • Δ heating {vsBase.heat >= 0 ? '+' : ''}{vsBase.heat.toFixed(2)} kW
+                          ({pct(vsBase.heat, baselineResults!.heatingLoadW / 1000)})
+                          {vsBase.eui != null ? ` • Δ EUI ${vsBase.eui >= 0 ? '+' : ''}${vsBase.eui.toFixed(1)}` : ''}.
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-              {siteClimate && !isLoadingClimate && (
-                <div className="site-card">
-                  <div className="site-card-header">
-                    <div>
-                      <div className="site-name">📍 {siteClimate.location.name}, {siteClimate.location.country}</div>
-                      <div className="site-coords">
-                        {siteClimate.location.latitude.toFixed(2)}°N, {siteClimate.location.longitude.toFixed(2)}°E
-                        {siteClimate.location.elevation != null ? ` • Alt: ${siteClimate.location.elevation}m` : ''}
+                  {tab === 'data' && (
+                    <div style={{ padding: 12, fontSize: 12 }}>
+                      <div className="section-title">Calculation Methodology (ISO 13790 Analytical Engine)</div>
+                      <div style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                        Q = U·A·ΔT per component (ΔT = setpoint − outdoor) • Solar = G·A·SHGC·shade • Ventilation = 0.33·ACH·V·ΔT •
+                        HVAC Load = (transmission + ventilation) − solar − internal gains.
+                      </div>
+                      <div className="btnrow" style={{ marginTop: 12 }}>
+                        <button className="btn" onClick={() => downloadText('analysis.json', toJson(bundle()), 'application/json')}>Download JSON</button>
+                        <button className="btn" onClick={() => downloadText('analysis.csv', toCsv(bundle()), 'text/csv')}>Download CSV</button>
+                        <button className="btn primary" onClick={persist}>Save Project Locally</button>
                       </div>
                     </div>
-                    <span className="site-weather-badge">
-                      {siteClimate.isDay ? '☀️' : '🌙'} {siteClimate.weatherLabel}
-                    </span>
-                  </div>
-
-                  <div className="site-grid">
-                    <div className="site-metric">
-                      <div className="site-metric-label">Temp</div>
-                      <div className="site-metric-val">{env.outdoorTempC} °C</div>
-                    </div>
-                    <div className="site-metric">
-                      <div className="site-metric-label">Solar Irradiance</div>
-                      <div className="site-metric-val">{env.solarIrradianceWm2} W/m²</div>
-                    </div>
-                    <div className="site-metric">
-                      <div className="site-metric-label">Humidity</div>
-                      <div className="site-metric-val">{env.relHumidityPct} %</div>
-                    </div>
-                    <div className="site-metric">
-                      <div className="site-metric-label">Wind</div>
-                      <div className="site-metric-val">{env.windSpeedMs} m/s</div>
-                    </div>
-                    <div className="site-metric">
-                      <div className="site-metric-label">Cloud</div>
-                      <div className="site-metric-val">{env.cloudCoverPct} %</div>
-                    </div>
-                    <div className="site-metric">
-                      <div className="site-metric-label">Peak Solar</div>
-                      <div className="site-metric-val">{siteClimate.daylightPeak.solarIrradianceWm2} W/m²</div>
-                    </div>
-                  </div>
-
-                  <div style={{ fontSize: 11, color: '#93a1b8', marginTop: 6, marginBottom: 3 }}>
-                    Analysis condition snapshot:
-                  </div>
-                  <div className="site-modes">
-                    <button
-                      className={activeClimateMode === 'current' ? 'active' : ''}
-                      onClick={() => handleApplyClimateMode('current')}
-                      title="Apply real-time live snapshot"
-                    >
-                      🕒 Live weather
-                    </button>
-                    <button
-                      className={activeClimateMode === 'daylight' ? 'active' : ''}
-                      onClick={() => handleApplyClimateMode('daylight')}
-                      title="Apply daytime peak solar condition"
-                    >
-                      ☀️ Peak solar
-                    </button>
-                    <button
-                      className={activeClimateMode === 'summer' ? 'active' : ''}
-                      onClick={() => handleApplyClimateMode('summer')}
-                      title="Summer extreme design conditions for cooling load"
-                    >
-                      🔥 Summer peak
-                    </button>
-                    <button
-                      className={activeClimateMode === 'winter' ? 'active' : ''}
-                      onClick={() => handleApplyClimateMode('winter')}
-                      title="Winter extreme design conditions for heating load"
-                    >
-                      ❄️ Winter peak
-                    </button>
-                  </div>
-
-                  <div className="site-actions">
-                    <button className="btn" onClick={refreshSiteClimate} title="Re-fetch latest live weather">
-                      🔄 Sync
-                    </button>
-                    <button className="btn" onClick={clearSiteLocation} title="Clear site and reset search">
-                      ✕ Change
-                    </button>
-                  </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </details>
-
-          <details className="coll" open>
-            <summary>② Environmental parameters</summary>
-            <div className="body">
-              {siteLocation ? (
-                <div className="env-location-badge">
-                  <span>📍 Site: <strong>{siteLocation.name}, {siteLocation.country}</strong></span>
-                  <span style={{ fontSize: 10, opacity: 0.85 }}>Live data synced</span>
-                </div>
-              ) : (
-                <div className="warnbox" style={{ marginTop: 0, marginBottom: 8, fontSize: 11 }}>
-                  ⚠️ Site location not set. Search and select a site location above to load local climatic data.
-                </div>
-              )}
-              <Slider label="Outdoor air temp" value={env.outdoorTempC} min={-10} max={50} step={0.5} unit="°C" onChange={(v) => set('outdoorTempC', v)} tip="Dry-bulb outdoor temperature. ΔT = setpoint − outdoor drives Q = U·A·ΔT." />
-              <Slider label="Solar radiation" value={env.solarIrradianceWm2} min={0} max={1200} step={10} unit="W/m²" onChange={(v) => set('solarIrradianceWm2', v)} tip="User-supplied incident irradiance on the glazing plane. Used DIRECTLY in G·A·SHGC·shade — cloud cover is never silently applied." />
-              <Slider label="Cloud cover" value={env.cloudCoverPct} min={0} max={100} step={1} unit="%" onChange={(v) => set('cloudCoverPct', v)} tip="Informational only. It does NOT rescale your solar input; supply measured irradiance directly." />
-              <Slider label="Wind speed" value={env.windSpeedMs} min={0} max={20} step={0.5} unit="m/s" onChange={(v) => set('windSpeedMs', v)} tip="Feeds the natural-ventilation potential note and free-cooling credit." />
-              <Slider label="Relative humidity" value={env.relHumidityPct} min={0} max={100} step={1} unit="%" onChange={(v) => set('relHumidityPct', v)} tip="Displayed for IEQ context; the steady-state heat balance does not model latent loads." />
-              <Slider label="Indoor target temp" value={env.indoorSetpointC} min={16} max={28} step={0.5} unit="°C" onChange={(v) => set('indoorSetpointC', v)} tip="Heating/cooling setpoint. Comfort band ≈ 20–24 °C operative." />
-              <div className="ctl">
-                <div className="row"><label>Analysis date</label></div>
-                <input className="txt" type="date" value={env.analysisDate} onChange={(e) => set('analysisDate', e.target.value)} aria-label="Analysis date" />
               </div>
-            </div>
-          </details>
+            )}
+          </div>
+        </div>
 
-          <details className="coll" open>
-            <summary>③ Building-design parameters</summary>
-            <div className="body">
-              <Slider label="Window-to-wall ratio" value={+design.wwr.value.toFixed(2)} min={0.05} max={0.9} step={0.01} unit="" onChange={(v) => setD('wwr', v)} prov={design.wwr} tip="Target glazing share of the wall band. Rescales glazing vs opaque wall conserving total band area." />
-              <Slider label="Wall U-value" value={design.wallU.value} min={0.1} max={3} step={0.05} unit="W/m²K" onChange={(v) => setD('wallU', v)} prov={design.wallU} />
-              <Slider label="Roof U-value" value={design.roofU.value} min={0.1} max={3} step={0.05} unit="W/m²K" onChange={(v) => setD('roofU', v)} prov={design.roofU} />
-              <Slider label="Glazing U-value" value={design.glazingU.value} min={0.5} max={5.8} step={0.1} unit="W/m²K" onChange={(v) => setD('glazingU', v)} prov={design.glazingU} />
-              <Slider label="SHGC" value={design.shgc.value} min={0.05} max={0.9} step={0.01} unit="" onChange={(v) => setD('shgc', v)} prov={design.shgc} tip="Solar heat gain coefficient of the glazing (0–1)." />
-              <Slider label="External shading transmit" value={design.shadingFactor.value} min={0.1} max={1} step={0.05} unit="" onChange={(v) => setD('shadingFactor', v)} prov={design.shadingFactor} tip="Fraction of sun transmitted after external shading. 1 = unshaded, 0.5 = deep fins/overhangs." />
-              <Slider label="Infiltration" value={design.infiltrationACH} min={0} max={3} step={0.1} unit="ACH" onChange={(v) => setDesign((d) => ({ ...d, infiltrationACH: v }))} tip="Air changes per hour. Q_vent = 0.33·ACH·V·ΔT." />
-              <Slider label="Internal gains" value={design.internalGainsWm2} min={0} max={30} step={0.5} unit="W/m²" onChange={(v) => setDesign((d) => ({ ...d, internalGainsWm2: v }))} tip="Occupants + equipment + lighting per floor m²." />
-              <Slider label="Orientation" value={design.orientationDeg} min={0} max={360} step={5} unit="°" onChange={(v) => setDesign((d) => ({ ...d, orientationDeg: v }))} tip="Informational for passive-solar notes. The simplified engine applies no hidden orientation multiplier." />
-              <div className="btnrow" style={{ marginTop: 8 }}>
-                <button className="btn" onClick={resetToModel}>Reset to model values</button>
-              </div>
-            </div>
-          </details>
+        {/* Unified High-Density CAD Inspector */}
+        <aside className="cad-inspector">
+          {/* Segmented Navigation Tabs */}
+          <div className="inspector-tabs">
+            <button
+              className={`inspector-tab ${inspectorTab === 'envelope' ? 'active' : ''}`}
+              onClick={() => setInspectorTab('envelope')}
+            >
+              Envelope
+            </button>
+            <button
+              className={`inspector-tab ${inspectorTab === 'climate' ? 'active' : ''}`}
+              onClick={() => setInspectorTab('climate')}
+            >
+              Climate
+            </button>
+            <button
+              className={`inspector-tab ${inspectorTab === 'specs' ? 'active' : ''}`}
+              onClick={() => setInspectorTab('specs')}
+            >
+              Specs
+            </button>
+            <button
+              className={`inspector-tab ${inspectorTab === 'model' ? 'active' : ''}`}
+              onClick={() => setInspectorTab('model')}
+            >
+              Elements
+            </button>
+          </div>
 
-          <details className="coll">
-            <summary>④ Ventilation &amp; greenery</summary>
-            <div className="body">
-              <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
-                <input type="checkbox" checked={design.naturalVentilationOn} onChange={(e) => setDesign((d) => ({ ...d, naturalVentilationOn: e.target.checked }))} />
-                Enable natural ventilation
-              </label>
-              <Slider label="Openable fraction" value={design.ventilationOpenableFraction} min={0} max={0.6} step={0.05} unit="" onChange={(v) => setDesign((d) => ({ ...d, ventilationOpenableFraction: v }))} />
-              <Slider label="Green roof share" value={design.greenRoofFraction} min={0} max={1} step={0.1} unit="" onChange={(v) => setDesign((d) => ({ ...d, greenRoofFraction: v }))} tip="Illustrative: effective roof U × (1 − 0.25·share)." />
-              <Slider label="Green wall share" value={design.greenWallFraction} min={0} max={1} step={0.1} unit="" onChange={(v) => setDesign((d) => ({ ...d, greenWallFraction: v }))} tip="Illustrative: effective wall U × (1 − 0.15·share)." />
-            </div>
-          </details>
-
-          <details className="coll">
-            <summary>⑤ Model inventory ({model.elements.length})</summary>
-            <div className="body" style={{ fontSize: 12 }}>
-              <div>Storeys: {model.storeys.join(', ') || '—'} • Spaces: {model.spaces}</div>
-              {model.elements.some((e) => e.category === 'structure') && (
-                <div style={{ color: '#64748b', marginTop: 2 }}>
-                  Incl. {model.elements.filter((e) => e.category === 'structure').length} structural parts
-                  (viewer only — excluded from heat calculations).
+          <div className="inspector-content">
+            {/* Selected Element Floating Banner */}
+            {selected && (
+              <div className="inspector-sel-card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong style={{ fontSize: 12.5, color: 'var(--text-lead)' }}>{selected.name}</strong>
+                  <button className="btn-close" onClick={() => setSelectedId(null)} title="Clear selection">✕</button>
                 </div>
-              )}
-              <input
-                className="txt" placeholder="Filter elements…" aria-label="Filter elements"
-                value={invFilter} onChange={(e) => setInvFilter(e.target.value)}
-                style={{ marginTop: 6 }}
-              />
-              <div style={{ maxHeight: 180, overflowY: 'auto', marginTop: 6 }}>
-                {filteredInv.slice(0, 250).map((e) => (
-                  <button
-                    key={e.id}
-                    className="btn"
-                    style={{ display: 'block', width: '100%', textAlign: 'left', marginBottom: 4, borderColor: selectedId === e.id ? '#38bdf8' : undefined }}
-                    onClick={() => setSelectedId(e.id)}
-                  >
-                    {e.name} <span style={{ color: '#64748b' }}>· {e.category} · {e.areaM2} m²</span>
-                  </button>
-                ))}
-              </div>
-              {filteredInv.length > 250 && (
-                <div style={{ color: '#64748b' }}>Showing 250 of {filteredInv.length} — refine the filter to find more.</div>
-              )}
-            </div>
-          </details>
-        </aside>
-
-        {/* -------- center -------- */}
-        <main className="centercol">
-          <section className="panel">
-            <h2 className="section-title">3D BIM viewer — {model.name}</h2>
-            <Viewer3D
-              model={model}
-              wireframe={wireframe}
-              showGrid={showGrid}
-              showAxes={showAxes}
-              visibleTypes={visibleTypes}
-              selectedId={selectedId}
-              onSelect={(id) => setSelectedId(id)}
-              autoRotate={autoRotate}
-            />
-            <div className="btnrow" style={{ marginTop: 8 }}>
-              {(['wall', 'window', 'door', 'roof', 'floor', 'structure'] as const).map((t) => (
-                <button
-                  key={t}
-                  className="btn"
-                  style={{ borderColor: visibleTypes[t] ? undefined : '#7f1d1d' }}
-                  onClick={() => setVisibleTypes((v) => ({ ...v, [t]: !v[t] }))}
-                  aria-pressed={visibleTypes[t]}
-                >
-                  {t}s: {visibleTypes[t] ? 'shown' : 'hidden'}
-                </button>
-              ))}
-              <button className="btn" onClick={() => setWireframe((v) => !v)}>Wireframe {wireframe ? 'on' : 'off'}</button>
-              <button className="btn" onClick={loadSample}>Sample building</button>
-              <button className="btn" onClick={loadDemoTower}>Demo tower</button>
-              <button className="btn primary" onClick={() => { setImportLog([]); setImportProgress(0); setDlg('bim'); }}>Import BIM…</button>
-            </div>
-            {selected ? (
-              <div className="selcard" style={{ marginTop: 8 }}>
-                <strong>{selected.name}</strong> <span style={{ color: '#64748b' }}>· {selected.category}{selected.ifcType ? ` · ${selected.ifcType}` : ''}{selected.globalId ? ` · ${selected.globalId.slice(0, 12)}…` : ''}</span>
-                <div style={{ marginTop: 4 }}>
-                  Area: <span className="mono">{selected.areaM2} m²</span><Prov v={{ value: 0, provenance: selected.areaProvenance }} />
-                  {'  '}U: <span className="mono">{selected.uValueWm2K ?? '—'} {selected.uValueWm2K ? 'W/m²K' : ''}</span>
+                <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span>{selected.category} · {selected.areaM2} m²</span>
+                  {selected.areaProvenance && <Prov v={{ value: 0, provenance: selected.areaProvenance }} />}
+                  {selected.uValueWm2K ? <span>· {selected.uValueWm2K} W/m²K</span> : null}
                   {selected.uProvenance && <Prov v={{ value: 0, provenance: selected.uProvenance }} />}
                 </div>
-                <div style={{ color: '#93a1b8' }}>
-                  Material: {selected.material ?? 'unknown'}
-                  {selected.materialProvenance && <Prov v={{ value: 0, provenance: selected.materialProvenance }} />}
-                  {selected.storey ? ` · Storey: ${selected.storey}` : ''}
+              </div>
+            )}
+
+            {/* TAB 1: ENVELOPE CONTROLS */}
+            {inspectorTab === 'envelope' && (
+              <div className="inspector-tab-pane">
+                <div className="inspector-sec-head">GLAZING &amp; FABRIC</div>
+                <Slider label="Window-to-wall ratio" value={+design.wwr.value.toFixed(2)} min={0.05} max={0.9} step={0.01} unit="" onChange={(v) => setD('wwr', v)} prov={design.wwr} tip="Target glazing share of the wall band. Rescales glazing vs opaque wall conserving total band area." />
+                <Slider label="Wall U-value" value={design.wallU.value} min={0.1} max={3} step={0.05} unit="W/m²K" onChange={(v) => setD('wallU', v)} prov={design.wallU} />
+                <Slider label="Roof U-value" value={design.roofU.value} min={0.1} max={3} step={0.05} unit="W/m²K" onChange={(v) => setD('roofU', v)} prov={design.roofU} />
+                <Slider label="Glazing U-value" value={design.glazingU.value} min={0.5} max={5.8} step={0.1} unit="W/m²K" onChange={(v) => setD('glazingU', v)} prov={design.glazingU} />
+                <Slider label="SHGC" value={design.shgc.value} min={0.05} max={0.9} step={0.01} unit="" onChange={(v) => setD('shgc', v)} prov={design.shgc} tip="Solar heat gain coefficient of the glazing (0–1)." />
+                <Slider label="External shading transmit" value={design.shadingFactor.value} min={0.1} max={1} step={0.05} unit="" onChange={(v) => setD('shadingFactor', v)} prov={design.shadingFactor} tip="Fraction of sun transmitted after external shading." />
+
+                <div className="inspector-sec-head" style={{ marginTop: 14 }}>VENTILATION &amp; GAINS</div>
+                <Slider label="Infiltration" value={design.infiltrationACH} min={0} max={3} step={0.1} unit="ACH" onChange={(v) => setDesign((d) => ({ ...d, infiltrationACH: v }))} tip="Air changes per hour. Q_vent = 0.33·ACH·V·ΔT." />
+                <Slider label="Internal gains" value={design.internalGainsWm2} min={0} max={30} step={0.5} unit="W/m²" onChange={(v) => setDesign((d) => ({ ...d, internalGainsWm2: v }))} tip="Occupants + equipment + lighting per floor m²." />
+                <Slider label="Orientation" value={design.orientationDeg} min={0} max={360} step={5} unit="°" onChange={(v) => setDesign((d) => ({ ...d, orientationDeg: v }))} tip="Orientation azimuth." />
+
+                <div className="inspector-sec-head" style={{ marginTop: 14 }}>PASSIVE GREENERY</div>
+                <label style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={design.naturalVentilationOn} onChange={(e) => setDesign((d) => ({ ...d, naturalVentilationOn: e.target.checked }))} />
+                  Enable Natural Ventilation
+                </label>
+                <Slider label="Openable fraction" value={design.ventilationOpenableFraction} min={0} max={0.6} step={0.05} unit="" onChange={(v) => setDesign((d) => ({ ...d, ventilationOpenableFraction: v }))} />
+                <Slider label="Green roof share" value={design.greenRoofFraction} min={0} max={1} step={0.1} unit="" onChange={(v) => setDesign((d) => ({ ...d, greenRoofFraction: v }))} tip="Illustrative: effective roof U × (1 − 0.25·share)." />
+                <Slider label="Green wall share" value={design.greenWallFraction} min={0} max={1} step={0.1} unit="" onChange={(v) => setDesign((d) => ({ ...d, greenWallFraction: v }))} tip="Illustrative: effective wall U × (1 − 0.15·share)." />
+
+                <div className="btnrow" style={{ marginTop: 12 }}>
+                  <button className="btn" onClick={resetToModel}>Reset to Model IFC Values</button>
                 </div>
               </div>
-            ) : (
-              <div className="hint" style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
-                Click any element in the viewport (or the inventory list) to inspect its properties. Missing values show a red “Unknown” tag and can be covered by design assumptions.
-              </div>
             )}
-            {model.warnings.length > 0 && (
-              <div className="warnbox">
-                {model.warnings.map((w, i) => <div key={i}>• {w}</div>)}
-              </div>
-            )}
-          </section>
 
-          <section className="panel">
-            <div className="tabs">
-              {(['charts', 'scenarios', 'sustain', 'data'] as const).map((t) => (
-                <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
-                  {t === 'charts' ? 'Charts & trends' : t === 'scenarios' ? `Scenarios (${scenarios.length})` : t === 'sustain' ? 'Sustainability features' : 'Data & assumptions'}
-                </button>
-              ))}
-            </div>
-
-            {tab === 'charts' && (
-              <div>
-                <h2 className="section-title">HVAC load vs outdoor temperature (live)</h2>
-                <TempSweepChart data={tempSweep} />
-                <h2 className="section-title" style={{ marginTop: 12 }}>Solar radiation vs transmitted solar gain (live)</h2>
-                <SolarSweepChart data={solarSweep} />
-                <h2 className="section-title" style={{ marginTop: 12 }}>Heating / cooling split at current conditions (kW)</h2>
-                <SimpleBar data={[{ name: 'Heating', value: +heatKW.toFixed(2) }, { name: 'Cooling', value: +coolKW.toFixed(2) }, { name: 'Solar gain', value: +(results.solarGainW / 1000).toFixed(2) }]} />
-                <h2 className="section-title" style={{ marginTop: 12 }}>Envelope conduction magnitude by component (W, |Q|)</h2>
-                <SimpleBar data={results.transmissionByComponent.map((c) => ({ name: c.label, value: +c.valueW.toFixed(0) }))} />
-                <h2 className="section-title" style={{ marginTop: 12 }}>
-                  {siteLocation ? `Site climate scenarios vs current design (kW)` : `Climate presets vs current design (kW)`}
-                </h2>
-                <GroupedBar data={presetCompare} series={[{ key: 'heating_kW', color: '#f87171' }, { key: 'cooling_kW', color: '#38bdf8' }]} />
-                {monthlyLoads ? (
-                  <>
-                    <h2 className="section-title" style={{ marginTop: 12 }}>
-                      {climate
-                        ? 'Monthly mean-condition loads from imported weather (kW snapshots)'
-                        : `Monthly seasonal loads for ${siteClimate?.location.name ?? 'site'} (kW design snapshots)`}
-                    </h2>
-                    <GroupedBar data={monthlyLoads} series={[{ key: 'heating_kW', color: '#f87171' }, { key: 'cooling_kW', color: '#38bdf8' }]} />
-                  </>
-                ) : (
-                  <div className="hint" style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>
-                    Select a site location above or import a climate CSV to enable the monthly seasonal load chart.
+            {/* TAB 2: CLIMATE & LOCATION */}
+            {inspectorTab === 'climate' && (
+              <div className="inspector-tab-pane">
+                <div className="inspector-sec-head">SITE LOCATION &amp; WEATHER</div>
+                <div className="loc-search-box">
+                  <div className="loc-input-wrap">
+                    <input
+                      className="loc-input"
+                      type="text"
+                      placeholder="Search site location (London, Dubai, Tokyo)..."
+                      value={locSearchQuery}
+                      onChange={(e) => handleSearchQueryChange(e.target.value)}
+                      onFocus={() => { if (locSuggestions.length > 0) setShowLocDropdown(true); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); executeSearchNow(); } }}
+                      aria-label="Site location search"
+                    />
+                    {locSearchQuery && (
+                      <button
+                        className="loc-clear-btn"
+                        title="Clear search"
+                        onClick={() => { setLocSearchQuery(''); setLocSuggestions([]); setShowLocDropdown(false); }}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
-                )}
-                {scenarioRows.length > 1 && (
-                  <>
-                    <h2 className="section-title" style={{ marginTop: 12 }}>Scenario energy comparison (kW)</h2>
-                    <GroupedBar data={scenarioRows} series={[{ key: 'heating_kW', color: '#f87171' }, { key: 'cooling_kW', color: '#38bdf8' }, { key: 'solar_kW', color: '#fbbf24' }]} />
-                  </>
-                )}
-              </div>
-            )}
+                  <button
+                    className="btn"
+                    style={{ padding: '7px 11px', whiteSpace: 'nowrap' }}
+                    onClick={executeSearchNow}
+                    disabled={isSearchingLoc}
+                    title="Search site location"
+                  >
+                    {isSearchingLoc ? '⏳' : 'Find'}
+                  </button>
 
-            {tab === 'scenarios' && (
-              <div>
-                <div className="btnrow">
-                  <button className="btn primary" onClick={saveScenario}>＋ Save current as scenario</button>
-                  <button className="btn" disabled={scenarios.length === 0} onClick={() => { setScenarios([]); setBaselineId(null); }}>Restore baseline (clear all)</button>
+                  {showLocDropdown && (
+                    <>
+                      <div style={{ position: 'fixed', inset: 0, zIndex: 45 }} onClick={() => setShowLocDropdown(false)} />
+                      <div className="loc-dropdown">
+                        {locSuggestions.length > 0 ? (
+                          locSuggestions.map((loc) => (
+                            <button
+                              key={`${loc.id}-${loc.latitude}`}
+                              className="loc-item"
+                              onClick={() => handleSelectLocation(loc)}
+                            >
+                              <span className="loc-item-title">
+                                📍 {loc.name}{loc.admin1 ? `, ${loc.admin1}` : ''}
+                                <span style={{ fontWeight: 400, color: 'var(--text-faint)', fontSize: 11 }}>({loc.country})</span>
+                              </span>
+                              <span className="loc-item-sub">
+                                {loc.latitude.toFixed(2)}°N, {loc.longitude.toFixed(2)}°E {loc.elevation != null ? ` • Alt: ${loc.elevation}m` : ''}
+                              </span>
+                            </button>
+                          ))
+                        ) : (
+                          <div style={{ padding: '8px 10px', fontSize: 12, color: 'var(--text-muted)' }}>No matching locations found.</div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
-                {scenarios.length === 0 && (
-                  <div className="hint" style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>
-                    No scenarios yet. Example workflow — Baseline: existing glazing + insulation + current climate →
-                    A: improved glazing + shading → B: better roof + lower WWR. Then compare below.
-                  </div>
-                )}
-                {scenarios.map((s) => {
-                  const r = resultsFor(s);
-                  const isBase = baseline && baseline.id === s.id;
-                  return (
-                    <div key={s.id} className="selcard" style={{ marginTop: 8 }}>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <input
-                          className="txt" value={s.name} style={{ maxWidth: 220 }}
-                          onChange={(e) => setScenarios((sc) => sc.map((x) => (x.id === s.id ? { ...x, name: e.target.value } : x)))}
-                          aria-label="Scenario name"
-                        />
-                        {isBase && <span className="badge ok">baseline</span>}
-                        <span style={{ fontSize: 11, color: '#64748b' }}>{new Date(s.createdAt).toLocaleString()}</span>
-                        <div style={{ flex: 1 }} />
-                        <button className="btn" onClick={() => { setBaselineId(s.id); setNotice({ kind: 'ok', text: `"${s.name}" set as baseline.` }); }}>Set baseline</button>
-                        <button className="btn" onClick={() => { setEnv({ ...s.env }); setDesign(JSON.parse(JSON.stringify(s.design))); setNotice({ kind: 'ok', text: `Restored "${s.name}" into the live controls.` }); }}>Restore</button>
-                        <button className="btn" onClick={() => { const c = { ...s, id: uuid(), name: s.name + ' (copy)' }; setScenarios((sc) => [...sc, c]); }}>Duplicate</button>
-                        <button className="btn danger" onClick={() => { setScenarios((sc) => sc.filter((x) => x.id !== s.id)); if (baselineId === s.id) setBaselineId(null); }}>Delete</button>
-                      </div>
-                      <div style={{ fontSize: 12, marginTop: 4 }} className="mono">
-                        heat {(r.heatingLoadW / 1000).toFixed(2)} kW • cool {(r.coolingLoadW / 1000).toFixed(2)} kW •
-                        solar {(r.solarGainW / 1000).toFixed(2)} kW • EUI {r.euiIllustrative?.toFixed(1) ?? 'n/a'} •
-                        WWR {(s.design.wwr.value * 100).toFixed(0)}% • U_win {s.design.glazingU.value} • shade {s.design.shadingFactor.value}
-                      </div>
-                    </div>
-                  );
-                })}
-                {scenarios.length >= 1 && baseline && (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table className="cmp">
-                      <thead>
-                        <tr><th>Scenario vs “{baseline.name}”</th><th>Δ heat kW</th><th>Δ cool kW</th><th>Δ EUI</th></tr>
-                      </thead>
-                      <tbody>
-                        {scenarios.map((s) => {
-                          const r = resultsFor(s);
-                          const dh = r.heatingLoadW / 1000 - baselineResults!.heatingLoadW / 1000;
-                          const dc = r.coolingLoadW / 1000 - baselineResults!.coolingLoadW / 1000;
-                          const de = r.euiIllustrative != null && baselineResults!.euiIllustrative != null ? r.euiIllustrative - baselineResults!.euiIllustrative! : null;
-                          return (
-                            <tr key={s.id}>
-                              <td>{s.name}</td>
-                              <td>{dh.toFixed(2)} ({pct(dh, baselineResults!.heatingLoadW / 1000)})</td>
-                              <td>{dc.toFixed(2)} ({pct(dc, baselineResults!.coolingLoadW / 1000)})</td>
-                              <td>{de != null ? `${de.toFixed(1)} (${pct(de, baselineResults!.euiIllustrative ?? 0)})` : 'n/a'}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                    <div className="hint" style={{ fontSize: 11, color: '#64748b' }}>
-                      Alternatives are compared, never labelled “optimal” — no optimization was run.
+
+                {!siteLocation && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Site presets:</div>
+                    <div className="loc-popular-pills">
+                      {POPULAR_SITES.slice(0, 6).map((site) => (
+                        <button key={site.id} className="loc-pill" onClick={() => handleSelectLocation(site)}>
+                          📍 {site.name}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
-              </div>
-            )}
 
-            {tab === 'sustain' && (
-              <div style={{ fontSize: 13 }}>
-                <h2 className="section-title">Building envelope optimization</h2>
-                <div className="btnrow">
-                  <button className="btn" onClick={() => { setD('glazingU', 0.8); setD('shgc', 0.25); }}>Improved glazing (U 0.8, SHGC 0.25)</button>
-                  <button className="btn" onClick={() => setD('shadingFactor', 0.55)}>External shading (×0.55)</button>
-                  <button className="btn" onClick={() => setD('wallU', 0.2)}>Wall insulation+ (U 0.2)</button>
-                  <button className="btn" onClick={() => setD('roofU', 0.15)}>Roof insulation+ (U 0.15)</button>
-                  <button className="btn" onClick={() => setD('wwr', 0.3)}>Reduce WWR → 30%</button>
-                </div>
-                {vsBase && baseline && (
-                  <div className="hint" style={{ marginTop: 6, color: '#93a1b8' }}>
-                    vs baseline “{baseline.name}”: Δ cooling {vsBase.cool >= 0 ? '+' : ''}{vsBase.cool.toFixed(2)} kW
-                    ({pct(vsBase.cool, baselineResults!.coolingLoadW / 1000)}) • Δ heating {vsBase.heat >= 0 ? '+' : ''}{vsBase.heat.toFixed(2)} kW
-                    ({pct(vsBase.heat, baselineResults!.heatingLoadW / 1000)})
-                    {vsBase.eui != null ? ` • Δ EUI ${vsBase.eui >= 0 ? '+' : ''}${vsBase.eui.toFixed(1)}` : ''}.
-                    EUI target: <span className="mono">{design.euiTargetKwhM2Yr} kWh/m²/yr</span> (configurable in Settings; source: user setting, not a regulation).
+                {siteClimate && !isLoadingClimate && (
+                  <div className="site-card" style={{ marginTop: 8 }}>
+                    <div className="site-card-header">
+                      <div>
+                        <div className="site-name">📍 {siteClimate.location.name}, {siteClimate.location.country}</div>
+                        <div className="site-coords">{siteClimate.location.latitude.toFixed(2)}°N, {siteClimate.location.longitude.toFixed(2)}°E</div>
+                      </div>
+                      <span className="site-weather-badge">{siteClimate.isDay ? '☀️' : '🌙'} {siteClimate.weatherLabel}</span>
+                    </div>
+
+                    <div className="site-modes" style={{ marginTop: 6 }}>
+                      <button className={activeClimateMode === 'current' ? 'active' : ''} onClick={() => handleApplyClimateMode('current')}>🕒 Live</button>
+                      <button className={activeClimateMode === 'daylight' ? 'active' : ''} onClick={() => handleApplyClimateMode('daylight')}>☀️ Peak Solar</button>
+                      <button className={activeClimateMode === 'summer' ? 'active' : ''} onClick={() => handleApplyClimateMode('summer')}>🔥 Summer</button>
+                      <button className={activeClimateMode === 'winter' ? 'active' : ''} onClick={() => handleApplyClimateMode('winter')}>❄️ Winter</button>
+                    </div>
+
+                    <div className="site-actions" style={{ marginTop: 6 }}>
+                      <button className="btn" onClick={refreshSiteClimate} title="Re-fetch live weather">🔄 Sync</button>
+                      <button className="btn" onClick={clearSiteLocation} title="Clear site">✕ Change</button>
+                    </div>
                   </div>
                 )}
-                <h2 className="section-title" style={{ marginTop: 12 }}>Passive solar strategies</h2>
-                <div style={{ color: '#93a1b8' }}>
-                  Orientation {design.orientationDeg}° • WWR {(design.wwr.value * 100).toFixed(0)}% • shading ×{design.shadingFactor.value} • SHGC {design.shgc.value}.
-                  Guidance (qualitative): south-facing glazing with external shading balances winter gain against summer overheating;
-                  low SHGC + shading cuts cooling most where irradiance &gt; 600 W/m². No solar-geometry engine is running — these are
-                  design prompts, not simulated savings.
+
+                <div className="inspector-sec-head" style={{ marginTop: 14 }}>CLIMATE ARCHETYPES</div>
+                <div className="presets" style={{ marginBottom: 12 }}>
+                  <button className={activeArchetype === 'arid' && !siteLocation ? 'active' : ''} onClick={() => handleApplyArchetype('arid')}>Arid</button>
+                  <button className={activeArchetype === 'tropical' && !siteLocation ? 'active' : ''} onClick={() => handleApplyArchetype('tropical')}>Tropical</button>
+                  <button className={activeArchetype === 'temperate' && !siteLocation ? 'active' : ''} onClick={() => handleApplyArchetype('temperate')}>Temperate</button>
                 </div>
-                <h2 className="section-title" style={{ marginTop: 12 }}>Natural ventilation assessment (preliminary — no CFD)</h2>
-                <div>
-                  Potential: <strong className={results.natVentPotential === 'high' ? 'g' : results.natVentPotential === 'moderate' ? 'a' : 'r'}>
-                    {results.natVentPotential.toUpperCase()}
-                  </strong>
-                  <div style={{ color: '#93a1b8' }}>{results.natVentNote}</div>
-                </div>
-                <h2 className="section-title" style={{ marginTop: 12 }}>Green roof &amp; wall options</h2>
-                <div style={{ color: '#93a1b8' }}>
-                  Green roof {(design.greenRoofFraction * 100).toFixed(0)}% → effective roof U{' '}
-                  {(heatInputs.uValues.roofU).toFixed(2)} W/m²K; green wall {(design.greenWallFraction * 100).toFixed(0)}% → effective
-                  wall U {(heatInputs.uValues.wallU).toFixed(2)} W/m²K. Adjust shares in the left panel; scenario comparison above
-                  quantifies the change. Evapotranspiration and stormwater effects are not modelled.
-                </div>
-                <h2 className="section-title" style={{ marginTop: 12 }}>Analysis tools / integrations</h2>
-                {INTEGRATIONS.map((i) => (
-                  <div key={i.name} className="selcard" style={{ marginTop: 6 }}>
-                    <span className={`dot ${i.status === 'connected' ? 'green' : i.status === 'not-configured' ? 'amber' : 'grey'}`} />{' '}
-                    <strong>{i.name}</strong> — <em style={{ color: '#93a1b8' }}>{i.status.replace('-', ' ')}</em>
-                    <div style={{ color: '#93a1b8' }}>{i.detail}</div>
-                  </div>
-                ))}
+
+                <div className="inspector-sec-head">BOUNDARY CONDITIONS</div>
+                <Slider label="Outdoor air temp" value={env.outdoorTempC} min={-10} max={50} step={0.5} unit="°C" onChange={(v) => set('outdoorTempC', v)} tip="Dry-bulb outdoor temperature." />
+                <Slider label="Solar radiation" value={env.solarIrradianceWm2} min={0} max={1200} step={10} unit="W/m²" onChange={(v) => set('solarIrradianceWm2', v)} tip="User-supplied incident irradiance on the glazing plane." />
+                <Slider label="Cloud cover" value={env.cloudCoverPct} min={0} max={100} step={1} unit="%" onChange={(v) => set('cloudCoverPct', v)} tip="Informational cloud cover." />
+                <Slider label="Wind speed" value={env.windSpeedMs} min={0} max={20} step={0.5} unit="m/s" onChange={(v) => set('windSpeedMs', v)} tip="Feeds natural ventilation & free-cooling credit." />
+                <Slider label="Relative humidity" value={env.relHumidityPct} min={0} max={100} step={1} unit="%" onChange={(v) => set('relHumidityPct', v)} />
+                <Slider label="Indoor setpoint" value={env.indoorSetpointC} min={16} max={28} step={0.5} unit="°C" onChange={(v) => set('indoorSetpointC', v)} tip="Heating/cooling comfort setpoint." />
               </div>
             )}
 
-            {tab === 'data' && (
-              <div style={{ fontSize: 12 }}>
-                <h2 className="section-title">Calculation methodology (analytical demo)</h2>
-                <div style={{ color: '#93a1b8' }}>
-                  Q = U·A·ΔT per component (ΔT = setpoint − outdoor, + = loss) • Solar G·A·SHGC·shade with the
-                  user-supplied G used directly (cloud is informational) • Ventilation 0.33·ACH·V·ΔT •
-                  HVAC = (transmission + ventilation) − solar − internal • Free-running T = T<sub>out</sub> + (solar + internal)/(ΣUA + H<sub>ve</sub>) •
-                  Daylight “potential” is an index, not validated DA • EUI is illustrative (load × equivalent full-load hours ÷ floor area).
-                  Full equations: <span className="mono">src/lib/calculations.ts</span>.
-                </div>
-                <h2 className="section-title" style={{ marginTop: 10 }}>Provenance of current inputs</h2>
-                <div className="mono" style={{ color: '#93a1b8' }}>
-                  <div>Wall U {design.wallU.value} [{design.wallU.provenance}] • Roof U {design.roofU.value} [{design.roofU.provenance}] • Glazing U {design.glazingU.value} [{design.glazingU.provenance}]</div>
-                  <div>SHGC {design.shgc.value} [{design.shgc.provenance}] • Shading {design.shadingFactor.value} [{design.shadingFactor.provenance}] • WWR {(design.wwr.value * 100).toFixed(0)}% [{design.wwr.provenance}]</div>
-                  <div>Floor {model.floorAreaM2} m² [{model.floorAreaProvenance}] • Volume {model.volumeM3} m³ [{model.volumeProvenance}] • Geometry: {model.geometryFidelity}</div>
-                </div>
-                {(results.warnings.length > 0 || model.warnings.length > 0) && (
-                  <div className="warnbox">
-                    {[...model.warnings, ...results.warnings].map((w, i) => <div key={i}>• {w}</div>)}
+            {/* TAB 3: PERFORMANCE & SPECS */}
+            {inspectorTab === 'specs' && (
+              <div className="inspector-tab-pane">
+                <div className="inspector-sec-head">PERFORMANCE METRICS</div>
+                <div className="kpis">
+                  <div className="kpi">
+                    <span className="label">Operative Temp</span>
+                    <span className="big">{results.operativeTempMaintainedC.toFixed(1)}<span style={{ fontSize: 12, color: 'var(--text-muted)' }}> °C</span></span>
+                    <span className="sub">{results.comfortStatus} · free {results.operativeTempFreeC.toFixed(1)}°C</span>
                   </div>
+
+                  <div className="kpi">
+                    <span className="label">HVAC Demand ({results.activeMode})</span>
+                    <span className="big">{(Math.max(heatKW, coolKW)).toFixed(1)}<span style={{ fontSize: 12, color: 'var(--text-muted)' }}> kW</span></span>
+                    <span className="sub">heat {heatKW.toFixed(1)} · cool {coolKW.toFixed(1)} kW</span>
+                  </div>
+
+                  <div className="kpi">
+                    <span className="label">Solar Heat Gain</span>
+                    <span className="big">{(results.solarGainW / 1000).toFixed(1)}<span style={{ fontSize: 12, color: 'var(--text-muted)' }}> kW</span></span>
+                    <span className="sub">transmitted irradiance</span>
+                  </div>
+
+                  <div className="kpi">
+                    <span className="label">Annual EUI</span>
+                    <span className="big">{eui?.toFixed(0) ?? '—'}<span style={{ fontSize: 12, color: 'var(--text-muted)' }}> kWh/m²</span></span>
+                    <span className="sub">target: {design.euiTargetKwhM2Yr} kWh/m²</span>
+                  </div>
+                </div>
+
+                <div className="inspector-sec-head" style={{ marginTop: 14 }}>ENVELOPE SURFACES</div>
+                <table className="spec-table">
+                  <thead>
+                    <tr>
+                      <th>Surface</th>
+                      <th style={{ textAlign: 'right' }}>Area (m²)</th>
+                      <th style={{ textAlign: 'right' }}>U (W/m²K)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Opaque Walls</td>
+                      <td style={{ textAlign: 'right' }}>{scaled.opaqueWallM2.toFixed(1)}</td>
+                      <td style={{ textAlign: 'right' }}>{design.wallU.value.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td>Glazing (WWR {(design.wwr.value * 100).toFixed(0)}%)</td>
+                      <td style={{ textAlign: 'right' }}>{scaled.glazingM2.toFixed(1)}</td>
+                      <td style={{ textAlign: 'right' }}>{design.glazingU.value.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td>Roof Assembly</td>
+                      <td style={{ textAlign: 'right' }}>{summary.roofArea.toFixed(1)}</td>
+                      <td style={{ textAlign: 'right' }}>{design.roofU.value.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td>Ground Slab</td>
+                      <td style={{ textAlign: 'right' }}>{model.floorAreaM2.toFixed(1)}</td>
+                      <td style={{ textAlign: 'right' }}>—</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div className="inspector-sec-head" style={{ marginTop: 14 }}>EMBODIED &amp; OPERATIONAL CARBON</div>
+                <div style={{ fontSize: 11.5, background: 'var(--bg-surface)', padding: '8px 10px', borderRadius: 4, border: '1px solid var(--rule)' }} className="mono">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Operational CO₂:</span>
+                    <strong style={{ color: 'var(--text-lead)' }}>{results.carbonKgPerYr?.toFixed(0) ?? '—'} kg/yr</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Carbon Intensity:</span>
+                    <span style={{ color: 'var(--text-body)' }}>{results.carbonKgPerYr && model.floorAreaM2 ? (results.carbonKgPerYr / model.floorAreaM2).toFixed(1) : '—'} kg/m²·yr</span>
+                  </div>
+                </div>
+                {results.warnings.slice(0, 2).map((w, i) => <div key={i} className="warnbox">• {w}</div>)}
+              </div>
+            )}
+
+            {/* TAB 4: ELEMENTS & INVENTORY */}
+            {inspectorTab === 'model' && (
+              <div className="inspector-tab-pane">
+                <div className="inspector-sec-head">MODEL SUMMARY</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                  <div>Storeys: <strong>{model.storeys.join(', ') || '—'}</strong></div>
+                  <div>Spaces: <strong>{model.spaces}</strong> · Floor Area: <strong>{model.floorAreaM2} m²</strong></div>
+                  <div>Volume: <strong>{model.volumeM3} m³</strong> · Entities: <strong>{model.elements.length}</strong></div>
+                </div>
+
+                <div className="inspector-sec-head">SEARCH ELEMENTS</div>
+                <input
+                  className="txt"
+                  placeholder="Filter elements by name or type…"
+                  aria-label="Filter elements"
+                  value={invFilter}
+                  onChange={(e) => setInvFilter(e.target.value)}
+                  style={{ width: '100%', marginBottom: 8 }}
+                />
+                <div className="inspector-element-list">
+                  {filteredInv.slice(0, 250).map((e) => (
+                    <button
+                      key={e.id}
+                      className={`inspector-elem-item ${selectedId === e.id ? 'active' : ''}`}
+                      onClick={() => setSelectedId(e.id)}
+                    >
+                      <div className="inspector-elem-name">{e.name}</div>
+                      <div className="inspector-elem-sub">{e.category} · {e.areaM2} m² {e.uValueWm2K ? `· ${e.uValueWm2K} W/m²K` : ''}</div>
+                    </button>
+                  ))}
+                </div>
+                {filteredInv.length > 250 && (
+                  <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>Showing 250 of {filteredInv.length} elements</div>
                 )}
-                <div className="btnrow" style={{ marginTop: 8 }}>
-                  <button className="btn" onClick={() => downloadText('analysis.json', toJson(bundle()), 'application/json')}>Download JSON</button>
-                  <button className="btn" onClick={() => downloadText('analysis.csv', toCsv(bundle()), 'text/csv')}>Download CSV</button>
-                  <button className="btn" onClick={persist}>Save project locally</button>
-                </div>
               </div>
             )}
-          </section>
-        </main>
-
-        {/* -------- right -------- */}
-        <aside className="panel rightcol">
-          <h2 className="section-title">Live performance analytics</h2>
-          <div className="section-title" style={{ border: 'none', padding: 0 }}>Indoor Environmental Quality</div>
-          <div className="kpis">
-            <div className="kpi">
-              <div className="label"><span className="tooltip" data-tip="Maintained operative temperature ≈ setpoint when HVAC is active, else the free-running estimate. Comfort band 20–24.5 °C.">Operative temp</span></div>
-              <div className={`big ${results.operativeTempMaintainedC > 26.5 || results.operativeTempMaintainedC < 20 ? 'r' : results.operativeTempMaintainedC > 24.5 ? 'a' : 'g'}`}>
-                {results.operativeTempMaintainedC.toFixed(1)}°C
-              </div>
-              <div className="sub">{results.comfortStatus} • free-running {results.operativeTempFreeC.toFixed(1)}°C</div>
-            </div>
-            <div className="kpi">
-              <div className="label"><span className="tooltip" data-tip="Daylight POTENTIAL index — explicitly NOT validated Daylight Autonomy, which needs annual Radiance simulation.">Daylight potential*</span></div>
-              <div className="big a">{results.daylightPotentialPct}%</div>
-              <div className="sub">*indicator only, not DA</div>
-            </div>
-            <div className="kpi">
-              <div className="label">Rel. humidity (input)</div>
-              <div className="big b">{env.relHumidityPct}%</div>
-              <div className="sub">{env.relHumidityPct > 70 ? 'humid — latent loads unmodelled' : env.relHumidityPct < 30 ? 'dry' : 'moderate'}</div>
-            </div>
-            <div className="kpi">
-              <div className="label">Nat. vent potential</div>
-              <div className={`big ${results.natVentPotential === 'high' ? 'g' : results.natVentPotential === 'moderate' ? 'a' : 'r'}`}>
-                {results.natVentPotential}
-              </div>
-              <div className="sub">wind {env.windSpeedMs} m/s</div>
-            </div>
           </div>
-
-          <div className="section-title" style={{ marginTop: 12 }}>Energy performance (instantaneous loads)</div>
-          <div className="kpis">
-            <div className="kpi">
-              <div className="label"><span className="tooltip" data-tip="Mechanical power needed NOW at stated conditions — not energy (kWh) and not annual EUI.">HVAC {results.activeMode}</span></div>
-              <div className={`big ${results.activeMode === 'cooling' ? 'b' : results.activeMode === 'heating' ? 'r' : 'g'}`}>
-                {(Math.max(heatKW, coolKW)).toFixed(2)}<span style={{ fontSize: 12 }}> kW</span>
-              </div>
-              <div className="sub">heat {heatKW.toFixed(2)} • cool {coolKW.toFixed(2)} kW</div>
-              <div className="bar"><div style={{ width: `${Math.min(100, Math.max(heatKW, coolKW) * 8)}%`, background: results.activeMode === 'heating' ? '#f87171' : '#38bdf8' }} /></div>
-              {vsBase && <div className="sub">vs baseline Δ {(heatKW - baselineResults!.heatingLoadW / 1000 + coolKW - baselineResults!.coolingLoadW / 1000 >= 0 ? '+' : '')}{(heatKW - baselineResults!.heatingLoadW / 1000 + coolKW - baselineResults!.coolingLoadW / 1000).toFixed(2)} kW</div>}
-            </div>
-            <div className="kpi">
-              <div className="label"><span className="tooltip" data-tip="Illustrative annualization: (heat×heat-hours + cool×cool-hours)/floor area. Configure hours in Settings. NOT a simulated annual result.">EUI illustrative*</span></div>
-              <div className={`big ${eui != null && eui <= design.euiTargetKwhM2Yr ? 'g' : eui != null && eui <= design.euiTargetKwhM2Yr * 1.4 ? 'a' : 'r'}`}>
-                {eui?.toFixed(0) ?? 'n/a'}<span style={{ fontSize: 12 }}> kWh/m²/yr</span>
-              </div>
-              <div className="sub">target {design.euiTargetKwhM2Yr} (user-set) • {results.annualEnergyKwh?.toFixed(0)} kWh/yr</div>
-            </div>
-            <div className="kpi">
-              <div className="label">Solar heat gain</div>
-              <div className="big a">{(results.solarGainW / 1000).toFixed(2)}<span style={{ fontSize: 12 }}> kW</span></div>
-              <div className="sub">G·A·SHGC·shade</div>
-            </div>
-            <div className="kpi">
-              <div className="label">Envelope ΔT flow</div>
-              <div className="big mono">{results.transmissionTotalW >= 0 ? '+' : ''}{(results.transmissionTotalW / 1000).toFixed(2)}<span style={{ fontSize: 12 }}> kW</span></div>
-              <div className="sub">+ = loss • ΔT {results.deltaTK.toFixed(1)} K</div>
-            </div>
-          </div>
-
-          <div className="section-title" style={{ marginTop: 12 }}>Envelope performance</div>
-          <div style={{ fontSize: 12 }} className="mono">
-            <div>Exterior: {summary.totalExterior.toFixed(1)} m² (wall {summary.wallArea.toFixed(1)} + win {summary.windowArea.toFixed(1)} + roof {summary.roofArea.toFixed(1)} + door {summary.doorArea.toFixed(1)})</div>
-            <div>Effective glazing {(scaled.glazingM2).toFixed(1)} m² @ WWR {(design.wwr.value * 100).toFixed(0)}% • opaque wall {scaled.opaqueWallM2.toFixed(1)} m²</div>
-            <div>Air volume {model.volumeM3} m³ • floor {model.floorAreaM2} m²</div>
-            <div>Carbon est: {results.carbonKgPerYr?.toFixed(0) ?? 'n/a'} kgCO₂/yr @ {design.carbonFactorKgPerKwh} kg/kWh</div>
-          </div>
-          {results.warnings.slice(0, 3).map((w, i) => <div key={i} className="warnbox">• {w}</div>)}
         </aside>
       </div>
 
-      <footer className="footer-note">
-        Analytical/demo mode — simplified steady-state physics for design comparison, not validated simulation or compliance. Extracted vs user vs assumption values are tagged throughout. No integration is shown as connected unless it genuinely is.
+
+      <footer className="footer-banner">
+        <div>● ISO 13790 Steady-State Analytical Model · Parametric Twin</div>
+        <div className="mono">BIM Entities: {model.elements.length} · Floor Area: {model.floorAreaM2} m² · Gross Vol: {model.volumeM3} m³</div>
       </footer>
 
       {/* ================= dialogs ================= */}
