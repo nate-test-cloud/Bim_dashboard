@@ -18,15 +18,15 @@ interface Props {
   onToggleAxes?: () => void;
 }
 
-// Professional Blender / Rhino CAD Architectural Palette
+// Professional Blender / Rhino CAD Architectural Palette (Zero Blue Slop)
 const COLORS: Record<string, number> = {
   wall: 0xdfd9d2,      // Matte architectural limestone / warm concrete
-  window: 0x64b5f6,    // Crystalline architectural glazing
+  window: 0x82919e,    // Smoked architectural reflective glazing
   door: 0xb87333,      // Architectural bronze / timber
-  roof: 0x4f5864,      // Dark zinc / slate roof assembly (high visibility)
-  floor: 0x757f8d,     // Structural slab concrete
+  roof: 0x38393d,      // Neutral dark charcoal / asphalt gravel roof (no blue cast)
+  floor: 0x666b74,     // Structural slab concrete
   structure: 0xea7600, // Blender CAD structural accent
-  other: 0x818cf8,     // Auxiliary spatial element
+  other: 0x9096a0,     // Neutral auxiliary spatial element
 };
 
 interface SceneRefs {
@@ -148,7 +148,7 @@ export default function Viewer3D(p: Props) {
       const ambient = new THREE.AmbientLight(0x454b56, 1.25);
       scene.add(ambient);
 
-      const hemiLight = new THREE.HemisphereLight(0xd1d9e6, 0x1a1c20, 0.95);
+      const hemiLight = new THREE.HemisphereLight(0xe8eaed, 0x1a1c20, 0.95);
       hemiLight.position.set(0, 50, 0);
       scene.add(hemiLight);
 
@@ -159,12 +159,12 @@ export default function Viewer3D(p: Props) {
       sun.shadow.mapSize.height = 1024;
       scene.add(sun);
 
-      const fillLight = new THREE.DirectionalLight(0x94b4db, 0.5);
+      const fillLight = new THREE.DirectionalLight(0xe5e7eb, 0.45);
       fillLight.position.set(-30, 20, -30);
       scene.add(fillLight);
 
       // Precision CAD Grid (Rhino / Blender style)
-      const grid = new THREE.GridHelper(80, 40, 0x4e5666, 0x2d323c);
+      const grid = new THREE.GridHelper(80, 40, 0x444850, 0x27292f);
       grid.name = 'grid';
       grid.position.y = -0.02;
       grid.visible = stateRef.current.showGrid;
@@ -197,10 +197,10 @@ export default function Viewer3D(p: Props) {
         }
         geo.computeVertexNormals();
         const mat = new THREE.MeshPhysicalMaterial({
-          color: 0x2563eb,
+          color: 0x82919e,
           metalness: 0.15,
-          roughness: 0.12,
-          transmission: 0.6,
+          roughness: 0.15,
+          transmission: 0.65,
           transparent: true,
           opacity: 0.78,
           side: THREE.DoubleSide,
@@ -293,9 +293,9 @@ export default function Viewer3D(p: Props) {
           // Crisp CAD profile edges (Forma / Revit aesthetic)
           const edgesGeo = new THREE.EdgesGeometry(geo);
           const edgesMat = new THREE.LineBasicMaterial({
-            color: isGlass ? 0x38bdf8 : 0x1e293b,
+            color: isGlass ? 0x94a3b8 : 0x1e2024,
             transparent: true,
-            opacity: isGlass ? 0.75 : 0.6,
+            opacity: isGlass ? 0.6 : 0.75,
           });
           const edges = new THREE.LineSegments(edgesGeo, edgesMat);
           mesh.add(edges);
@@ -444,18 +444,18 @@ export default function Viewer3D(p: Props) {
     }
     selectedRef.current = { mesh: null, instance: null };
 
-    // Highlight selected element with vibrant corporate cobalt glow
+    // Highlight selected element with Blender Active Orange glow
     if (p.selectedId) {
       const mesh = s.meshes.get(p.selectedId) ?? null;
       if (mesh) {
         const m = mesh.material as THREE.MeshStandardMaterial;
-        m.emissive = new THREE.Color(0x2563eb);
-        m.emissiveIntensity = 0.65;
+        m.emissive = new THREE.Color(0xea7600);
+        m.emissiveIntensity = 0.5;
         selectedRef.current = { mesh, instance: null };
       } else if (s.struct) {
         const idx = structIdsOf(s).indexOf(p.selectedId);
         if (idx >= 0) {
-          s.struct.setColorAt(idx, new THREE.Color(0x2563eb));
+          s.struct.setColorAt(idx, new THREE.Color(0xea7600));
           if (s.struct.instanceColor) s.struct.instanceColor.needsUpdate = true;
           selectedRef.current = { mesh: null, instance: idx };
         }

@@ -14,10 +14,11 @@ Under NO circumstances should any AI assistant or developer reproduce the stereo
 7. **NO UNSTYLED INLINE TEXT STRINGS IN LABELS:** Never smush provenance/data tags (`GEO`, `STD`) directly against property labels without a styled badge or pill container.
 8. **NO RAW BROWSER FORM CONTROLS:** Never use default OS white square checkboxes or unstyled HTML range sliders in a dark CAD workspace. Always use custom dark CAD toggle switches and interactive scrubber pills.
 9. **NO DOUBLE FOOTER SANDWICH:** Never stack a collapsible drawer handle on top of a redundant static footer banner. Unify the drawer handle and system status strip into a single, clean status bar.
-10. **MANDATORY DESIGN STANDARD:** Swiss Architectural & Blender/Rhino CAD Workstation:
+10. **NO EXCESSIVE BLUE / GENERIC BLUE SLOP:** Never flood numeric fields, scrubber fills, cards, active states, lighting, or 3D materials with generic saturated primary blue (`#3b82f6`, `#2563eb`, `#38bdf8`, `#365d8c`). High-end CAD software (Blender/Rhino) uses neutral graphite fills (`rgba(255,255,255,0.08)`), neutral dark charcoal roofs (`#38393d`), smoked architectural glass (`#82919e`), and iconic Blender Active Orange (`#ea7600`) for selection.
+11. **MANDATORY DESIGN STANDARD:** Swiss Architectural & Blender/Rhino CAD Workstation:
    - **Full-Bleed 3D Viewport:** 100% canvas stage with isometric 3/4 beauty framing (entire building centered with breathing room).
    - **Floating Telemetry HUD:** High-density live telemetry floats in a subtle bottom-left HUD chip directly over the canvas.
    - **Unified Right Inspector:** A single 320px high-density property panel with segmented tabs (`Envelope`, `Climate`, `Specs`, `Outliner`).
    - **Collapsible Bottom Drawer:** 2D analytical charts live in a collapsible bottom drawer, toggleable with a clean drawer tab.
-   - **Workstation Palette:** Neutral charcoal slate (`#16171a`, `#22252a`, `#26292f`), subtle hairline borders (`#181a1e`), Blender active orange (`#ea7600`), and steel blue scrubbers (`#365d8c`).
+   - **Workstation Palette:** Neutral charcoal slate (`#16171a`, `#22252a`, `#26292f`), subtle hairline borders (`#181a1e`), Blender active orange (`#ea7600`), and neutral graphite scrubbers (`rgba(255, 255, 255, 0.08)`).
 

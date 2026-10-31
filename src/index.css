@@ -39,9 +39,8 @@
   /* Workstation Accents */
   --brand-primary: #ea7600;    /* Blender Iconic Action Orange */
   --brand-primary-hover: #ff8e1c;
-  --brand-tint: rgba(234, 118, 0, 0.18);
-  --cad-blue: #3888d8;         /* Technical CAD Cyan / Blue */
-  --cad-steel: #365d8c;        /* Blender classic slider steel */
+  --cad-slider-fill: rgba(255, 255, 255, 0.08); /* Blender neutral slider graphite */
+  --cad-slider-edge: rgba(255, 255, 255, 0.28);
 
   --solar-amber: #f59e0b;      /* Solar radiation & daylight gains */
   --sky-cobalt: #0284c7;       /* Free-cooling, glazing transmission */
@@ -584,9 +583,9 @@ a:hover {
 }
 
 .prov.derived {
-  background: rgba(56, 139, 253, 0.18);
-  color: #58a6ff;
-  border: 1px solid rgba(56, 139, 253, 0.35);
+  background: rgba(255, 255, 255, 0.08);
+  color: #c5cbd5;
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .prov.assumption {
@@ -839,8 +838,9 @@ a:hover {
 }
 
 .inspector-sel-card {
-  background: rgba(37, 99, 235, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: var(--bg-surface);
+  border: 1px solid var(--rule-strong);
+  border-left: 3px solid var(--brand-primary);
   border-radius: var(--radius-sm);
   padding: 8px 10px;
   margin-bottom: 12px;
@@ -885,7 +885,7 @@ a:hover {
 }
 
 .inspector-elem-item.active {
-  background: rgba(37, 99, 235, 0.15);
+  background: rgba(234, 118, 0, 0.15);
   border-color: var(--brand-primary);
 }
 
@@ -994,7 +994,7 @@ input[type="range"] {
   appearance: none;
   width: 100%;
   height: 4px;
-  background: #252d3a;
+  background: var(--bg-surface);
   border-radius: 2px;
   outline: none;
   margin: 6px 0;
@@ -1006,10 +1006,10 @@ input[type="range"]::-webkit-slider-thumb {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--brand-primary-hover);
+  background: var(--brand-primary);
   cursor: pointer;
   border: 2px solid var(--bg-panel);
-  box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 6px rgba(234, 118, 0, 0.45);
   transition: transform 0.1s ease;
 }
 
@@ -1211,7 +1211,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .kpi .big.g { color: #34d399; }
-.kpi .big.b { color: #38bdf8; }
+.kpi .big.b { color: #e2e8f0; }
 .kpi .big.a { color: #fbbf24; }
 .kpi .big.r { color: #f87171; }
 
@@ -1642,10 +1642,21 @@ input[type="range"]::-webkit-slider-thumb:hover {
   top: 0;
   left: 0;
   bottom: 0;
-  background: rgba(54, 93, 140, 0.45);
-  border-right: 2px solid #588ec9;
+  background: rgba(255, 255, 255, 0.08);
+  border-right: 1.5px solid rgba(255, 255, 255, 0.28);
   pointer-events: none;
   transition: width 0.05s ease;
+}
+
+.blender-scrubber:hover .scrubber-bar-fill {
+  background: rgba(255, 255, 255, 0.12);
+  border-right-color: rgba(255, 255, 255, 0.42);
+}
+
+.blender-scrubber:focus .scrubber-bar-fill,
+.blender-scrubber.editing .scrubber-bar-fill {
+  background: rgba(234, 118, 0, 0.18);
+  border-right-color: var(--brand-primary);
 }
 
 .scrubber-label-group {
@@ -1743,9 +1754,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .shelf-tool-btn.active {
-  background: rgba(37, 99, 235, 0.22);
-  color: #93c5fd;
-  border-color: rgba(59, 130, 246, 0.4);
+  background: var(--bg-hover);
+  color: var(--brand-primary);
+  border-color: rgba(234, 118, 0, 0.45);
 }
 
 .shelf-divider {
@@ -1827,7 +1838,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .outliner-item.active {
-  background: rgba(37, 99, 235, 0.2);
+  background: rgba(234, 118, 0, 0.16);
   border-left: 2px solid var(--brand-primary);
 }
 

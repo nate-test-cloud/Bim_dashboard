@@ -1007,20 +1007,20 @@ export default function App() {
                       </div>
                       <div className="drawer-chart-card">
                         <div className="drawer-card-title">{siteLocation ? `Site Climate Scenarios (kW)` : `Climate Presets (kW)`}</div>
-                        <GroupedBar data={presetCompare} series={[{ key: 'heating_kW', color: '#f87171' }, { key: 'cooling_kW', color: '#38bdf8' }]} />
+                        <GroupedBar data={presetCompare} series={[{ key: 'heating_kW', color: '#e06c75' }, { key: 'cooling_kW', color: '#5e7a88' }]} />
                       </div>
                       {monthlyLoads && (
                         <div className="drawer-chart-card">
                           <div className="drawer-card-title">
                             {climate ? 'Monthly Weather Mean Loads (kW)' : `Monthly Seasonal Loads for ${siteClimate?.location.name ?? 'site'} (kW)`}
                           </div>
-                          <GroupedBar data={monthlyLoads} series={[{ key: 'heating_kW', color: '#f87171' }, { key: 'cooling_kW', color: '#38bdf8' }]} />
+                          <GroupedBar data={monthlyLoads} series={[{ key: 'heating_kW', color: '#e06c75' }, { key: 'cooling_kW', color: '#5e7a88' }]} />
                         </div>
                       )}
                       {scenarioRows.length > 1 && (
                         <div className="drawer-chart-card">
                           <div className="drawer-card-title">Scenario Energy Comparison (kW)</div>
-                          <GroupedBar data={scenarioRows} series={[{ key: 'heating_kW', color: '#f87171' }, { key: 'cooling_kW', color: '#38bdf8' }, { key: 'solar_kW', color: '#fbbf24' }]} />
+                          <GroupedBar data={scenarioRows} series={[{ key: 'heating_kW', color: '#e06c75' }, { key: 'cooling_kW', color: '#5e7a88' }, { key: 'solar_kW', color: '#e5a83b' }]} />
                         </div>
                       )}
                     </div>

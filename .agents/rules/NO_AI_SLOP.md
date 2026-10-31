@@ -16,7 +16,7 @@ NEVER generate interfaces containing:
 6. **Debug Text in Header:** Never display engine logs like `(Sample building loaded)` in the header.
 7. **Unstyled Inline Tags in Labels:** Never smush unstyled text like `GEO` or `STD` directly into property label strings.
 8. **Raw Browser Form Controls:** Never use white HTML checkboxes in a dark CAD theme.
-9. **Double Footer Stack:** Never stack a drawer handle on top of a redundant static footer banner.
+10. **NO EXCESSIVE BLUE / GENERIC BLUE SLOP:** Never flood numeric fields, scrubber fills, cards, active states, lighting, or 3D materials with generic saturated primary blue (`#3b82f6`, `#2563eb`, `#38bdf8`, `#365d8c`). High-end CAD software (Blender/Rhino) uses neutral graphite fills (`rgba(255,255,255,0.08)`), neutral dark charcoal roofs (`#38393d`), smoked architectural glass (`#82919e`), and iconic Blender Active Orange (`#ea7600`) for selection.
 
 ---
 
@@ -27,5 +27,5 @@ All engineering, BIM, and 3D simulation interfaces in this project MUST follow t
 3. **Unified Right Inspector with Outliner:** Segmented tabs (`⚡ Envelope`, `🌐 Climate`, `📊 Specs`, `🗂 Outliner`).
 4. **Blender-Style Scrubber Pills:** Interactive numeric drag scrubbers with embedded magnitude fill.
 5. **Single Unified Status Bar & Collapsible Drawer:** Clean drawer tab integrated with telemetry.
-6. **Workstation Palette:** Neutral charcoal slate (`#16171a`, `#22252a`, `#26292f`), subtle hairline borders (`#181a1e`), Blender active orange (`#ea7600`), and steel blue scrubbers (`#365d8c`).
+6. **Workstation Palette:** Neutral charcoal slate (`#16171a`, `#22252a`, `#26292f`), subtle hairline borders (`#181a1e`), Blender active orange (`#ea7600`), and neutral graphite scrubbers (`rgba(255, 255, 255, 0.08)`).
 
