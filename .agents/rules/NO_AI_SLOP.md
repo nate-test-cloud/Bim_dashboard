@@ -2,34 +2,30 @@
 
 > [!CAUTION]
 > **STRICT ARCHITECTURAL DIRECTIVE — ZERO AI SLOP**
-> Under NO circumstances should any agent or developer generate the stereotypical **3-column SaaS dashboard** for this project or any 3D/CAD engineering tool.
+> Under NO circumstances should any agent or developer generate stereotypical SaaS dashboard patterns or the blacklisted UI anti-patterns below.
 
 ---
 
-## 1. The Blacklisted Cliché ("The 3-Column SaaS Trap")
-NEVER generate interfaces following this boilerplate:
-1. **Left Column:** A stack of generic card accordions with HTML sliders.
-2. **Center Column:** Squeezing a 3D WebGL canvas into a small 400px card, followed immediately underneath by two giant Recharts 2D line graphs that push the rest of the app off-screen.
-3. **Right Column:** A 2x2 grid of bubbly stat cards with giant bold numbers (`22.4°C`, `58.2 kW`, `50.2 kW`, `145 kWh/m²`).
-4. **Card-Soup:** Putting every single piece of information inside a separate rounded rectangle with a 1px border.
-5. **Traffic Light Badges:** Using blue, green, and yellow pill badges side-by-side (`● Sample building loaded` in green, `Analytical Engine` in yellow, `Plugins` in blue).
+## 1. The Blacklisted Clichés & Anti-Patterns
+NEVER generate interfaces containing:
+1. **The 3-Column SaaS Trap:** Squeezing a 3D WebGL canvas into a small 400px card between sidebars with Recharts stacked underneath.
+2. **Duplicate Ghost Navigation:** Never place analytics tabs in the top header if an analytical bottom drawer already exists.
+3. **Duplicate Primary Buttons:** Never put multiple identical primary buttons (e.g. `Import IFC`) on the screen at the same time.
+4. **Redundant Toolbars:** Never duplicate toggles (Orbit, Wire, Grid, Axes) in both a top horizontal bar and a vertical shelf.
+5. **Floating Button Clusters on Canvas:** Never put floating layer filter buttons (`Wall`, `Window`, `Roof`) over the 3D model when a Scene Outliner tree exists.
+6. **Debug Text in Header:** Never display engine logs like `(Sample building loaded)` in the header.
+7. **Unstyled Inline Tags in Labels:** Never smush unstyled text like `GEO` or `STD` directly into property label strings.
+8. **Raw Browser Form Controls:** Never use white HTML checkboxes in a dark CAD theme.
+9. **Double Footer Stack:** Never stack a drawer handle on top of a redundant static footer banner.
 
 ---
 
 ## 2. Mandatory Standard: Full-Bleed CAD & Studio Workspace
-All engineering, BIM, and 3D simulation interfaces in this project MUST follow the layout paradigms of **Blender, Unreal Engine, Autodesk Forma, and Rhino**:
+All engineering, BIM, and 3D simulation interfaces in this project MUST follow the layout paradigms of **Blender, Unreal Engine, and Rhino**:
+1. **Full-Bleed Viewport Hero (100% Canvas):** Centered isometric 3/4 beauty angle framing the geometry cleanly.
+2. **Left 'T' Toolbar Shelf:** Slim 32px vertical strip for manipulation tools.
+3. **Unified Right Inspector with Outliner:** Segmented tabs (`⚡ Envelope`, `🌐 Climate`, `📊 Specs`, `🗂 Outliner`).
+4. **Blender-Style Scrubber Pills:** Interactive numeric drag scrubbers with embedded magnitude fill.
+5. **Single Unified Status Bar & Collapsible Drawer:** Clean drawer tab integrated with telemetry.
+6. **Workstation Palette:** Neutral charcoal slate (`#16171a`, `#22252a`, `#26292f`), subtle hairline borders (`#181a1e`), Blender active orange (`#ea7600`), and steel blue scrubbers (`#365d8c`).
 
-1. **Full-Bleed Viewport Hero (100% Canvas):**
-   * The 3D canvas occupies the entire workspace. The building model is the main event, not a card in a grid.
-2. **Floating Viewport HUDs:**
-   * Camera controls, azimuth compass, layer toggles, and view tools float directly over the 3D canvas in a minimalist glass dock (`backdrop-filter: blur(12px)`).
-3. **Unified Right Inspector:**
-   * A single, sleek, high-density property panel on the right (like Figma or Blender properties) with segmented tabs:
-     * `[ Envelope & Physics ]`
-     * `[ Site & Climate ]`
-     * `[ Performance & Specs ]`
-4. **Collapsible Bottom Drawer for Analytical Charts:**
-   * 2D analytical sweep curves (HVAC load vs Temp, Solar gain) must NEVER sit in the middle of the screen cutting the 3D model in half.
-   * They must live in a dockable bottom drawer that can be expanded when needed and collapsed into a compact status bar when viewing the model.
-5. **Live Performance Viewport HUD Strip:**
-   * High-priority KPIs (Operative Temp, EUI, Peak Demand) float as a discreet, single-line telemetry HUD strip in the bottom-left corner of the 3D viewport.

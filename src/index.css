@@ -403,7 +403,7 @@ a:hover {
 /* Floating High-Density Viewport Telemetry HUD */
 .cad-telemetry-hud {
   position: absolute;
-  bottom: 50px;
+  bottom: 44px;
   left: 16px;
   z-index: 20;
   display: flex;
@@ -459,88 +459,161 @@ a:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* Floating Viewport Quick Controls (Bottom Right) */
-.cad-viewport-bottom-bar {
-  position: absolute;
-  bottom: 50px;
-  right: 16px;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  pointer-events: auto;
-}
-
-.cad-pill-group {
+/* Topbar Model Picker */
+.topbar-model-picker {
   display: flex;
   align-items: center;
-  gap: 4px;
-  background: rgba(14, 17, 23, 0.88);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  gap: 2px;
+  background: var(--bg-surface);
+  border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
-  padding: 4px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 2px;
+  margin-left: 12px;
 }
 
-.cad-btn-pill {
+.topbar-model-btn {
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 500;
-  padding: 4px 9px;
+  padding: 3px 9px;
   border-radius: var(--radius-xs);
   cursor: pointer;
   transition: all 0.12s ease;
 }
 
-.cad-btn-pill:hover {
+.topbar-model-btn:hover {
   background: var(--bg-hover);
   color: var(--text-lead);
 }
 
-.cad-btn-pill.active {
-  background: var(--bg-surface);
-  color: var(--text-lead);
+.topbar-model-btn.active {
+  background: var(--bg-elevated);
   border-color: var(--rule-strong);
+  color: var(--accent-active);
   font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.cad-btn-pill.highlight {
-  background: var(--brand-primary);
-  color: #ffffff;
-  border-color: var(--brand-primary);
-}
-
-.cad-btn-pill.highlight:hover {
-  background: var(--brand-primary-hover);
-}
-
-.cad-tag-pill {
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-faint);
-  font-size: 10.5px;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: var(--radius-xs);
+/* Custom CAD Toggle Button */
+.cad-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: var(--bg-surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  color: var(--text-body);
+  font-size: 11.5px;
   cursor: pointer;
-  text-transform: capitalize;
-  transition: all 0.12s ease;
+  margin-bottom: 8px;
+  transition: all 0.14s ease;
 }
 
-.cad-tag-pill:hover {
+.cad-toggle-btn:hover {
   background: var(--bg-hover);
-  color: var(--text-lead);
+  border-color: var(--rule-strong);
 }
 
-.cad-tag-pill.active {
-  background: rgba(37, 99, 235, 0.18);
-  color: #93c5fd;
-  border-color: rgba(59, 130, 246, 0.35);
+.cad-toggle-btn.active {
+  background: var(--bg-elevated);
+  border-color: var(--accent-active);
+}
+
+.cad-toggle-label {
+  font-weight: 500;
+}
+
+.cad-toggle-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-field);
+  border: 1px solid var(--rule-subtle);
+  padding: 2px 7px;
+  border-radius: 9999px;
+}
+
+.cad-toggle-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: background 0.14s ease;
+}
+
+.cad-toggle-btn.active .cad-toggle-dot {
+  background: var(--accent-active);
+  box-shadow: 0 0 6px var(--accent-active);
+}
+
+.cad-toggle-text {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-faint);
+}
+
+.cad-toggle-btn.active .cad-toggle-text {
+  color: var(--accent-active);
+}
+
+/* Provenance Mini-Badges */
+.prov {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 4px;
+  border-radius: var(--radius-xs);
+  text-transform: uppercase;
+  user-select: none;
+  line-height: 1.1;
+}
+
+.prov.extracted {
+  background: rgba(46, 160, 67, 0.18);
+  color: #3fb950;
+  border: 1px solid rgba(46, 160, 67, 0.35);
+}
+
+.prov.derived {
+  background: rgba(56, 139, 253, 0.18);
+  color: #58a6ff;
+  border: 1px solid rgba(56, 139, 253, 0.35);
+}
+
+.prov.assumption {
+  background: rgba(210, 153, 34, 0.18);
+  color: #d29922;
+  border: 1px solid rgba(210, 153, 34, 0.35);
+}
+
+.prov.user {
+  background: rgba(163, 113, 247, 0.18);
+  color: #bc8cff;
+  border: 1px solid rgba(163, 113, 247, 0.35);
+}
+
+.prov.unknown {
+  background: rgba(248, 81, 73, 0.18);
+  color: #f85149;
+  border: 1px solid rgba(248, 81, 73, 0.35);
+}
+
+/* Bottom Drawer Center Status */
+.drawer-handle-center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 /* Collapsible Bottom Drawer for Analytical Charts */

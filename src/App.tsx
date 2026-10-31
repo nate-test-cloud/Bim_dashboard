@@ -810,7 +810,24 @@ export default function App() {
           <span className="brand-subtitle">STUDIO</span>
           <span className="brand-sep">/</span>
           <span className="brand-model">{model.name}</span>
-          <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginLeft: 4 }}>({modelStatus})</span>
+        </div>
+
+        {/* Clean Workstation Model Switcher */}
+        <div className="topbar-model-picker">
+          <button
+            className={`topbar-model-btn ${model.name === 'Sample Office (Parametric)' ? 'active' : ''}`}
+            onClick={loadSample}
+            title="Load Parametric Sample Building"
+          >
+            Sample Office
+          </button>
+          <button
+            className={`topbar-model-btn ${model.name.includes('Tower') ? 'active' : ''}`}
+            onClick={loadDemoTower}
+            title="Load Twisting Glass Tower"
+          >
+            Tower Model
+          </button>
         </div>
 
         {siteLocation && (
@@ -822,26 +839,10 @@ export default function App() {
 
         <div style={{ flex: 1 }} />
 
-        {/* Viewport Mode Switcher */}
-        <div className="view-mode-tabs">
-          <button className={tab === 'charts' ? 'active' : ''} onClick={() => setTab('charts')}>
-            Analytics
-          </button>
-          <button className={tab === 'sustain' ? 'active' : ''} onClick={() => setTab('sustain')}>
-            Strategies
-          </button>
-          <button className={tab === 'scenarios' ? 'active' : ''} onClick={() => setTab('scenarios')}>
-            Scenarios ({scenarios.length})
-          </button>
-          <button className={tab === 'data' ? 'active' : ''} onClick={() => setTab('data')}>
-            Data
-          </button>
-        </div>
-
         {/* Action Controls */}
         <div className="topbar-actions">
-          <button className="btn" onClick={() => { setImportLog([]); setImportProgress(0); setDlg('bim'); }} title="Import IFC or JSON BIM model">
-            Import IFC
+          <button className="btn primary" onClick={() => { setImportLog([]); setImportProgress(0); setDlg('bim'); }} title="Import IFC or JSON BIM model">
+            + Import IFC
           </button>
           <button className="btn" onClick={() => { try { exportPdf(bundle()); } catch (e) { setNotice({ kind: 'err', text: `PDF export failed: ${e instanceof Error ? e.message : e}` }); } }} title="Export Architectural Report">
             Export PDF
@@ -948,48 +949,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Floating Viewport Tool Controls (Bottom Right) */}
-          <div className="cad-viewport-bottom-bar">
-            <div className="cad-pill-group">
-              <button
-                className={`cad-btn-pill ${model.name === 'Sample Office (Parametric)' ? 'active' : ''}`}
-                onClick={loadSample}
-                title="Load Parametric Sample Building"
-              >
-                Sample Office
-              </button>
-              <button
-                className={`cad-btn-pill ${model.name.includes('Tower') ? 'active' : ''}`}
-                onClick={loadDemoTower}
-                title="Load Twisting Glass Tower"
-              >
-                Tower Model
-              </button>
-              <button
-                className="cad-btn-pill highlight"
-                onClick={() => { setImportLog([]); setImportProgress(0); setDlg('bim'); }}
-                title="Import IFC / JSON BIM Model"
-              >
-                Import IFC…
-              </button>
-            </div>
-            <div className="cad-pill-group">
-              {(['wall', 'window', 'roof', 'floor', 'structure'] as const).map((t) => {
-                const isVisible = visibleTypes[t] !== false;
-                return (
-                  <button
-                    key={t}
-                    className={`cad-tag-pill ${isVisible ? 'active' : ''}`}
-                    onClick={() => setVisibleTypes((v) => ({ ...v, [t]: !v[t] }))}
-                    title={`Toggle ${t} visibility`}
-                  >
-                    {t}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {/* Collapsible Bottom Drawer for Analytical Charts */}
           <div className={`cad-bottom-drawer ${drawerOpen ? 'open' : 'closed'}`}>
             <div
@@ -999,11 +958,17 @@ export default function App() {
             >
               <div className="drawer-handle-left">
                 <span className="drawer-icon">{drawerOpen ? '▼' : '▲'}</span>
-                <span className="drawer-title">ANALYTICAL CHARTS &amp; PARAMETRIC SWEEPS</span>
+                <span className="drawer-title">ANALYTICS &amp; PARAMETRIC SWEEPS</span>
                 <span className="drawer-badge">{tab.toUpperCase()}</span>
               </div>
+              <div className="drawer-handle-center">
+                <span>● {modelStatus} · ISO 13790 Analytical Model</span>
+              </div>
               <div className="drawer-handle-right">
-                <span className="drawer-hint">{drawerOpen ? 'Collapse' : 'Expand detailed sweeps & comparisons'}</span>
+                <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+                  Entities: {model.elements.length} · {model.floorAreaM2} m² · {model.volumeM3} m³
+                </span>
+                <span className="drawer-hint" style={{ marginLeft: 12 }}>{drawerOpen ? 'Collapse ▾' : 'Expand ▴'}</span>
               </div>
             </div>
 
@@ -1243,10 +1208,18 @@ export default function App() {
                 <Slider label="Orientation" value={design.orientationDeg} min={0} max={360} step={5} unit="°" onChange={(v) => setDesign((d) => ({ ...d, orientationDeg: v }))} tip="Orientation azimuth." />
 
                 <div className="inspector-sec-head" style={{ marginTop: 14 }}>PASSIVE GREENERY</div>
-                <label style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={design.naturalVentilationOn} onChange={(e) => setDesign((d) => ({ ...d, naturalVentilationOn: e.target.checked }))} />
-                  Enable Natural Ventilation
-                </label>
+                <button
+                  type="button"
+                  className={`cad-toggle-btn ${design.naturalVentilationOn ? 'active' : ''}`}
+                  onClick={() => setDesign((d) => ({ ...d, naturalVentilationOn: !d.naturalVentilationOn }))}
+                  title="Toggle natural ventilation modeling"
+                >
+                  <span className="cad-toggle-label">Natural Ventilation</span>
+                  <span className="cad-toggle-pill">
+                    <span className="cad-toggle-dot" />
+                    <span className="cad-toggle-text">{design.naturalVentilationOn ? 'ON' : 'OFF'}</span>
+                  </span>
+                </button>
                 <Slider label="Openable fraction" value={design.ventilationOpenableFraction} min={0} max={0.6} step={0.05} unit="" onChange={(v) => setDesign((d) => ({ ...d, ventilationOpenableFraction: v }))} />
                 <Slider label="Green roof share" value={design.greenRoofFraction} min={0} max={1} step={0.1} unit="" onChange={(v) => setDesign((d) => ({ ...d, greenRoofFraction: v }))} tip="Illustrative: effective roof U × (1 − 0.25·share)." />
                 <Slider label="Green wall share" value={design.greenWallFraction} min={0} max={1} step={0.1} unit="" onChange={(v) => setDesign((d) => ({ ...d, greenWallFraction: v }))} tip="Illustrative: effective wall U × (1 − 0.15·share)." />
@@ -1563,12 +1536,6 @@ export default function App() {
           </div>
         </aside>
       </div>
-
-
-      <footer className="footer-banner">
-        <div>● ISO 13790 Steady-State Analytical Model · Parametric Twin</div>
-        <div className="mono">BIM Entities: {model.elements.length} · Floor Area: {model.floorAreaM2} m² · Gross Vol: {model.volumeM3} m³</div>
-      </footer>
 
       {/* ================= dialogs ================= */}
       {dlg === 'bim' && (

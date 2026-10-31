@@ -52,7 +52,6 @@ export default function Viewer3D(p: Props) {
   const [azimuth, setAzimuth] = useState('N');
   const [azimuthDeg, setAzimuthDeg] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [structCount, setStructCount] = useState(0);
   const [viewPreset, setViewPreset] = useState<'iso' | 'top' | 'front' | 'side' | 'custom'>('iso');
   const stateRef = useRef(p);
   stateRef.current = p;
@@ -80,7 +79,7 @@ export default function Viewer3D(p: Props) {
     if (!s || !bounds) return;
     const { center, size } = bounds;
     const dirv = new THREE.Vector3(0.75, 0.55, 0.9).normalize();
-    s.camera.position.copy(center).addScaledVector(dirv, size * 0.9);
+    s.camera.position.copy(center).addScaledVector(dirv, size * 1.55);
     s.camera.near = Math.max(0.01, size / 10000);
     s.camera.far = size * 20 + 1000;
     s.camera.updateProjectionMatrix();
@@ -97,13 +96,13 @@ export default function Viewer3D(p: Props) {
 
     if (preset === 'iso') {
       const dirv = new THREE.Vector3(0.75, 0.65, 0.85).normalize();
-      s.camera.position.copy(center).addScaledVector(dirv, size * 0.95);
+      s.camera.position.copy(center).addScaledVector(dirv, size * 1.55);
     } else if (preset === 'top') {
-      s.camera.position.set(center.x, center.y + size * 1.35, center.z + 0.001);
+      s.camera.position.set(center.x, center.y + size * 2.0, center.z + 0.001);
     } else if (preset === 'front') {
-      s.camera.position.set(center.x, center.y + size * 0.15, center.z + size * 1.3);
+      s.camera.position.set(center.x, center.y + size * 0.25, center.z + size * 2.0);
     } else if (preset === 'side') {
-      s.camera.position.set(center.x + size * 1.3, center.y + size * 0.15, center.z);
+      s.camera.position.set(center.x + size * 2.0, center.y + size * 0.25, center.z);
     }
 
     s.camera.near = Math.max(0.01, size / 10000);
@@ -223,7 +222,6 @@ export default function Viewer3D(p: Props) {
         core.userData.eid = 'tower-core';
         scene.add(core);
         meshes.set('tower-core', core);
-        setStructCount(0);
       } else {
         // Structural parts -> single InstancedMesh
         const structEls = model.elements.filter((el) => el.category === 'structure');
@@ -257,7 +255,6 @@ export default function Viewer3D(p: Props) {
           struct.visible = stateRef.current.visibleTypes['structure'] !== false;
           scene.add(struct);
         }
-        setStructCount(structEls.length);
 
         for (const el of model.elements) {
           if (el.category === 'storey' || el.category === 'space' || el.category === 'structure') continue;
@@ -518,74 +515,16 @@ export default function Viewer3D(p: Props) {
           <div className="dock-separator" />
 
           <div className="viewer-action-group">
-            <button className="dock-btn" onClick={fitCamera} title="Center and Fit Viewport">
+            <button className="dock-btn" onClick={fitCamera} title="Center and Fit Viewport (F)">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M3 12h3m12 0h3M12 3v3m0 12v3"/></svg>
-              <span>Fit</span>
+              <span>Fit View</span>
             </button>
-            {p.onToggleAutoRotate && (
-              <button
-                className={`dock-btn ${p.autoRotate ? 'active' : ''}`}
-                onClick={p.onToggleAutoRotate}
-                title="Toggle Turntable Orbit"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-1.19"/></svg>
-                <span>Orbit</span>
-              </button>
-            )}
-            {p.onToggleWireframe && (
-              <button
-                className={`dock-btn ${p.wireframe ? 'active' : ''}`}
-                onClick={p.onToggleWireframe}
-                title="Toggle Wireframe Mesh"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polygon points="2 17 12 22 22 17 12 12 2 17"/></svg>
-                <span>Wire</span>
-              </button>
-            )}
-            {p.onToggleGrid && (
-              <button
-                className={`dock-btn ${p.showGrid ? 'active' : ''}`}
-                onClick={p.onToggleGrid}
-                title="Toggle CAD Grid"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
-                <span>Grid</span>
-              </button>
-            )}
-            {p.onToggleAxes && (
-              <button
-                className={`dock-btn ${p.showAxes ? 'active' : ''}`}
-                onClick={p.onToggleAxes}
-                title="Toggle Spatial Axes (XYZ)"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
-                <span>Axes</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-
-        {/* Bottom Floating Status Bar */}
-        <div className="viewer-bottom-hud">
-          <div className="hud-pill">
-            <span className="hud-indicator" />
-            <span className="hud-label">Heading:</span>
-            <strong className="mono">{azimuth} ({azimuthDeg}°)</strong>
-          </div>
-          <div className="hud-pill">
-            <span className="hud-label">Elements:</span>
-            <strong className="mono">{p.model.elements.length}</strong>
-            {structCount > 0 && <span className="hud-subtle">({structCount} structural)</span>}
-          </div>
-          <div className="hud-pill">
-            <span className="hud-tag">
-              {p.model.geometryFidelity === 'actual'
-                ? '✓ High Fidelity Geometry'
-                : p.model.geometryFidelity === 'approximate'
-                  ? 'Bounding Volumes'
-                  : 'Parametric Sample'}
-            </span>
+            <div className="dock-separator" />
+            <div className="dock-meta" title="Camera View Heading">
+              <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', padding: '0 4px', letterSpacing: '0.04em' }}>
+                🧭 {azimuth} {azimuthDeg}°
+              </span>
+            </div>
           </div>
         </div>
       </div>
