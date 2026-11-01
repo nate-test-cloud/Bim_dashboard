@@ -842,9 +842,88 @@ export default function App() {
 
         {/* Action Controls */}
         <div className="topbar-actions">
-          <button className="btn primary" onClick={() => { setImportLog([]); setImportProgress(0); setDlg('bim'); }} title="Import IFC or JSON BIM model">
-            + Import IFC
-          </button>
+          <div className="import-popover-container">
+            <button
+              className={`btn primary ${dlg === 'bim' ? 'active' : ''}`}
+              onClick={() => {
+                if (dlg === 'bim') {
+                  setDlg(null);
+                } else {
+                  setImportLog([]);
+                  setImportProgress(0);
+                  setDlg('bim');
+                }
+              }}
+              title="Import IFC or JSON BIM model"
+            >
+              + Import IFC
+            </button>
+
+            {dlg === 'bim' && (
+              <>
+                <div className="popover-backdrop" onClick={() => !importBusy && setDlg(null)} />
+                <div className="import-popover" onClick={(e) => e.stopPropagation()}>
+                  <div className="import-popover-header">
+                    <div className="import-popover-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      <span>IMPORT BIM MODEL</span>
+                    </div>
+                    <button className="btn-close" onClick={() => !importBusy && setDlg(null)} title="Close">✕</button>
+                  </div>
+
+                  <div className="import-popover-body">
+                    <div className="import-desc">
+                      Supported: <strong>IFC (.ifc)</strong> STEP &bull; <strong>.json</strong>.<br />
+                      Direct geometric extraction for walls, slabs, roofs, and windows.
+                    </div>
+
+                    <div
+                      className="dropzone"
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleBimFile(f); }}
+                    >
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary)" strokeWidth="2" style={{ margin: '0 auto 6px' }}>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      <div>Drop <strong>.ifc</strong> or <strong>.json</strong> file here</div>
+                      <div className="dropzone-sub">or click to browse local files</div>
+                      <input
+                        ref={fileInputRef} type="file" accept=".ifc,.json" style={{ display: 'none' }}
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleBimFile(f); e.target.value = ''; }}
+                      />
+                    </div>
+
+                    {importBusy && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 11, display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <span>Parsing geometry…</span>
+                          <span className="mono">{importProgress}%</span>
+                        </div>
+                        <div className="progress"><div style={{ width: `${importProgress}%` }} /></div>
+                        <div className="btnrow" style={{ marginTop: 6 }}>
+                          <button className="btn danger" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => { cancelRef.current = true; }}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {importLog.length > 0 && <pre className="log" style={{ marginTop: 8, maxHeight: 80, fontSize: 10 }}>{importLog.join('\n')}</pre>}
+                  </div>
+
+                  <div className="import-popover-footer">
+                    <button className="btn" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => { loadSample(); setDlg(null); }}>Sample Office</button>
+                    <button className="btn" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => setDlg(null)} disabled={importBusy}>Close</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
           <button className="btn" onClick={() => { try { exportPdf(bundle()); } catch (e) { setNotice({ kind: 'err', text: `PDF export failed: ${e instanceof Error ? e.message : e}` }); } }} title="Export Architectural Report">
             Export PDF
           </button>
@@ -1539,44 +1618,6 @@ export default function App() {
       </div>
 
       {/* ================= dialogs ================= */}
-      {dlg === 'bim' && (
-        <div className="modal-back" onClick={() => !importBusy && setDlg(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Import BIM model</h3>
-            <div style={{ fontSize: 12, color: '#93a1b8', marginBottom: 8 }}>
-              Supported: <strong>IFC (.ifc)</strong> STEP — walls, windows, doors, slabs, roofs, storeys, materials,
-              property &amp; quantity sets. Native Revit <strong>.rvt is not parseable</strong> — export to IFC from Revit first.
-              Also accepts normalized exchange <strong>.json</strong>. The viewer shows the <em>actual imported elements</em>, never a substitute shape.
-            </div>
-            <div
-              className="dropzone"
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleBimFile(f); }}
-            >
-              Drop .ifc / .json here or click to browse
-              <input
-                ref={fileInputRef} type="file" accept=".ifc,.json" style={{ display: 'none' }}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleBimFile(f); e.target.value = ''; }}
-              />
-            </div>
-            {importBusy && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 12 }}>Parsing… {importProgress}%</div>
-                <div className="progress"><div style={{ width: `${importProgress}%` }} /></div>
-                <div className="btnrow" style={{ marginTop: 6 }}>
-                  <button className="btn danger" onClick={() => { cancelRef.current = true; }}>Cancel</button>
-                </div>
-              </div>
-            )}
-            {importLog.length > 0 && <pre className="log" style={{ marginTop: 8 }}>{importLog.join('\n')}</pre>}
-            <div className="btnrow" style={{ marginTop: 10 }}>
-              <button className="btn" onClick={loadSample}>Use sample building instead</button>
-              <button className="btn" onClick={() => setDlg(null)} disabled={importBusy}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {dlg === 'climate' && (
         <div className="modal-back" onClick={() => setDlg(null)}>
