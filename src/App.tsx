@@ -803,11 +803,12 @@ export default function App() {
       {/* ================= Swiss Architectural CAD Header ================= */}
       <header className="topbar">
         <div className="brand">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 21h18M3 7l9-4 9 4M4 7v14M20 7v14M10 21V11h4v10"/>
-          </svg>
-          <span className="brand-title">ENVELOPE</span>
-          <span className="brand-subtitle">STUDIO</span>
+          <img
+            src="/logo.png"
+            alt="BIM Sustainability Analytics"
+            className="brand-logo"
+            title="BIM Sustainability Analytics"
+          />
           <span className="brand-sep">/</span>
           <span className="brand-model">{model.name}</span>
         </div>

@@ -137,10 +137,19 @@ a:hover {
 .brand {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-family: var(--font-display);
   white-space: nowrap;
   color: var(--text-lead);
+}
+
+.brand-logo {
+  height: 30px;
+  width: auto;
+  max-width: 150px;
+  object-fit: contain;
+  display: block;
+  user-select: none;
 }
 
 .brand-title {

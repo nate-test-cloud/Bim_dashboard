@@ -26,5 +26,6 @@ models/
 *.sln
 *.sw?
 tmp/
-*.jpeg
 *.png
+!public/*.png
+!Minimalist BIM Sustainability Logo.png
