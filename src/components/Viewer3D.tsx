@@ -168,7 +168,6 @@ export default function Viewer3D(p: Props) {
       const gridSize = 800;
       const gridDivisions = 400; // 2-unit CAD resolution across 800m field
       const halfSize = gridSize / 2;
-      const center = gridDivisions / 2;
 
       // Group containing full-field grid and prominent colored center axis lines
       const grid = new THREE.Group();
@@ -180,56 +179,49 @@ export default function Viewer3D(p: Props) {
       const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x272a31, 0x272a31);
       (gridHelper.material as THREE.LineBasicMaterial).transparent = true;
       (gridHelper.material as THREE.LineBasicMaterial).opacity = 0.85;
-
-      // Color the center lines in GridHelper's geometry: X = Red, Y = Yellow
-      const colorAttr = gridHelper.geometry.attributes.color as THREE.BufferAttribute;
-      if (colorAttr) {
-        const redColor = new THREE.Color(0xef4444);
-        const yellowColor = new THREE.Color(0xfacc15);
-        // Line 1: X axis (center * 4 + 0, center * 4 + 1)
-        colorAttr.setXYZ(center * 4 + 0, redColor.r, redColor.g, redColor.b);
-        colorAttr.setXYZ(center * 4 + 1, redColor.r, redColor.g, redColor.b);
-        // Line 2: Ground Y axis (center * 4 + 2, center * 4 + 3)
-        colorAttr.setXYZ(center * 4 + 2, yellowColor.r, yellowColor.g, yellowColor.b);
-        colorAttr.setXYZ(center * 4 + 3, yellowColor.r, yellowColor.g, yellowColor.b);
-        colorAttr.needsUpdate = true;
-      }
+      (gridHelper.material as THREE.LineBasicMaterial).depthWrite = false;
       grid.add(gridHelper);
 
-      // Dedicated crisp center axis overlay (elevated slightly at y=0.005 to avoid z-fighting)
-      const centerAxesGeo = new THREE.BufferGeometry();
-      const centerAxesPos = new Float32Array([
-        // X-axis main center line (from -halfSize to +halfSize along X)
-        -halfSize, 0.005, 0,
-        halfSize, 0.005, 0,
-        // Y-axis ground main center line (from -halfSize to +halfSize along depth/Y)
-        0, 0.005, -halfSize,
-        0, 0.005, halfSize,
-      ]);
-      const centerAxesCols = new Float32Array([
-        // X axis: Vibrant CAD Red (#ef4444)
-        0.937, 0.267, 0.267,
-        0.937, 0.267, 0.267,
-        // Y axis: Vibrant CAD Yellow (#facc15)
-        0.980, 0.800, 0.082,
-        0.980, 0.800, 0.082,
-      ]);
-      centerAxesGeo.setAttribute('position', new THREE.BufferAttribute(centerAxesPos, 3));
-      centerAxesGeo.setAttribute('color', new THREE.BufferAttribute(centerAxesCols, 3));
-      const centerAxesMat = new THREE.LineBasicMaterial({
-        vertexColors: true,
-        toneMapped: false,
-        depthWrite: false,
-      });
-      const centerAxesLines = new THREE.LineSegments(centerAxesGeo, centerAxesMat);
-      grid.add(centerAxesLines);
+      // Dedicated ultra-crisp CAD center axes (X = Red #ef4444, Y = Yellow #facc15, Z = Green #22c55e).
+      // We use slender architectural cylindrical rods (radius 0.045m = ~9cm diameter) with unlit
+      // MeshBasicMaterial and depthWrite. Unlike 1px GL_LINES which suffer from subpixel anti-aliasing
+      // blur when crossed by dark background grid lines, these rods rasterize with crisp MSAA polygons
+      // and stay razor-sharp at any camera angle.
+      const axisRadius = 0.045;
+      const axesGroup = new THREE.Group();
+      axesGroup.name = 'center-cad-axes';
+      axesGroup.renderOrder = 3;
 
+      // 1. X-axis (Vibrant CAD Red #ef4444, from -halfSize to +halfSize along X)
+      const xGeo = new THREE.CylinderGeometry(axisRadius, axisRadius, gridSize, 8);
+      xGeo.rotateZ(-Math.PI / 2);
+      const xMat = new THREE.MeshBasicMaterial({ color: 0xef4444, toneMapped: false, depthWrite: true });
+      const xAxisMesh = new THREE.Mesh(xGeo, xMat);
+      xAxisMesh.position.set(0, 0.02, 0);
+      axesGroup.add(xAxisMesh);
+
+      // 2. Y-axis (Vibrant CAD Yellow #facc15, from -halfSize to +halfSize along depth Z)
+      const yGeo = new THREE.CylinderGeometry(axisRadius, axisRadius, gridSize, 8);
+      yGeo.rotateX(Math.PI / 2);
+      const yMat = new THREE.MeshBasicMaterial({ color: 0xfacc15, toneMapped: false, depthWrite: true });
+      const yAxisMesh = new THREE.Mesh(yGeo, yMat);
+      yAxisMesh.position.set(0, 0.02, 0);
+      axesGroup.add(yAxisMesh);
+
+      // 3. Z-axis (Vibrant CAD Green #22c55e, vertical elevation along Y from origin upwards)
+      const zGeo = new THREE.CylinderGeometry(axisRadius, axisRadius, halfSize, 8);
+      const zMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, toneMapped: false, depthWrite: true });
+      const zAxisMesh = new THREE.Mesh(zGeo, zMat);
+      zAxisMesh.position.set(0, halfSize / 2, 0);
+      axesGroup.add(zAxisMesh);
+
+      grid.add(axesGroup);
       scene.add(grid);
 
       // World Axes Helper (hidden by default unless explicitly toggled)
       const axes = new THREE.AxesHelper(24);
       axes.name = 'axes';
-      axes.setColors(new THREE.Color(0xef4444), new THREE.Color(0xfacc15), new THREE.Color(0x38bdf8));
+      axes.setColors(new THREE.Color(0xef4444), new THREE.Color(0xfacc15), new THREE.Color(0x22c55e));
       axes.position.y = 0.01;
       axes.visible = Boolean(stateRef.current.showAxes);
       scene.add(axes);
@@ -281,9 +273,68 @@ export default function Viewer3D(p: Props) {
         core.userData.eid = 'tower-core';
         scene.add(core);
         meshes.set('tower-core', core);
+      } else if (model.elements.some((el) => el.meshGeometries && el.meshGeometries.length > 0)) {
+        // High-Fidelity Real BIM Geometry from Web-IFC Engine
+        for (const el of model.elements) {
+          if (!el.meshGeometries || el.meshGeometries.length === 0) continue;
+          const isGlass = el.category === 'window';
+          const elGroup = new THREE.Group();
+          elGroup.userData.eid = el.id;
+
+          const baseMat = isGlass
+            ? new THREE.MeshPhysicalMaterial({
+                color: COLORS.window,
+                transparent: true,
+                opacity: 0.65,
+                roughness: 0.08,
+                transmission: 0.75,
+                metalness: 0.1,
+                wireframe: stateRef.current.wireframe,
+                side: THREE.DoubleSide,
+                emissive: new THREE.Color(0x000000),
+              })
+            : new THREE.MeshStandardMaterial({
+                color: COLORS[el.category] ?? COLORS.other,
+                transparent: false,
+                opacity: 1,
+                roughness: el.category === 'wall' ? 0.35 : el.category === 'roof' ? 0.5 : 0.45,
+                metalness: el.category === 'roof' ? 0.2 : 0.08,
+                wireframe: stateRef.current.wireframe,
+                side: THREE.DoubleSide,
+                emissive: new THREE.Color(0x000000),
+              });
+
+          for (const mg of el.meshGeometries) {
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(mg.positions, 3));
+            geo.setAttribute('normal', new THREE.BufferAttribute(mg.normals, 3));
+            geo.setIndex(new THREE.BufferAttribute(mg.indices, 1));
+
+            const mesh = new THREE.Mesh(geo, baseMat.clone());
+            mesh.castShadow = !isGlass;
+            mesh.receiveShadow = true;
+            mesh.userData.eid = el.id;
+
+            // Sharp CAD architectural silhouette contour edges
+            const edgesGeo = new THREE.EdgesGeometry(geo, 28);
+            const edgesMat = new THREE.LineBasicMaterial({
+              color: isGlass ? 0x94a3b8 : 0x181a1e,
+              transparent: true,
+              opacity: isGlass ? 0.45 : 0.75,
+            });
+            const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+            mesh.add(edges);
+
+            elGroup.add(mesh);
+          }
+
+          elGroup.visible = stateRef.current.visibleTypes[el.category] !== false;
+          scene.add(elGroup);
+          meshes.set(el.id, elGroup as unknown as THREE.Mesh);
+        }
       } else {
         // Structural parts -> single InstancedMesh
-        const structEls = model.elements.filter((el) => el.category === 'structure');
+        const structEls = model.elements.filter((el) => el.category === 'structure' && el.dims && el.center);
         if (structEls.length) {
           const geo = new THREE.BoxGeometry(1, 1, 1);
           const mat = new THREE.MeshStandardMaterial({
@@ -296,8 +347,8 @@ export default function Viewer3D(p: Props) {
           const c = new THREE.Color(COLORS.structure);
           const ids: string[] = [];
           structEls.forEach((el, i) => {
-            const d = el.dims ?? { x: 1, y: 1, z: 1 };
-            const cc = el.center ?? { x: 0, y: 0, z: 0 };
+            const d = el.dims!;
+            const cc = el.center!;
             tmpPos.set(cc.x, cc.y, cc.z);
             tmpScale.set(Math.max(d.x, 0.02), Math.max(d.y, 0.02), Math.max(d.z, 0.02));
             if (el.rotation) tmpQuat.set(el.rotation[0], el.rotation[1], el.rotation[2], el.rotation[3]);
@@ -316,9 +367,9 @@ export default function Viewer3D(p: Props) {
         }
 
         for (const el of model.elements) {
-          if (el.category === 'storey' || el.category === 'space' || el.category === 'structure') continue;
-          const d = el.dims ?? { x: 3, y: 2.5, z: 0.25 };
-          const c = el.center ?? { x: 0, y: 2, z: 0 };
+          if (el.category === 'storey' || el.category === 'space' || el.category === 'structure' || !el.dims || !el.center) continue;
+          const d = el.dims;
+          const c = el.center;
           const geo = new THREE.BoxGeometry(Math.max(d.x, 0.05), Math.max(d.y, 0.05), Math.max(d.z, 0.05));
           const isGlass = el.category === 'window';
 
@@ -378,7 +429,7 @@ export default function Viewer3D(p: Props) {
         ray.setFromCamera(ptr, s.camera);
         const targets: THREE.Object3D[] = [...s.meshes.values()];
         if (s.struct && s.struct.visible) targets.push(s.struct);
-        const hits = ray.intersectObjects(targets);
+        const hits = ray.intersectObjects(targets, true);
         if (!hits.length) {
           stateRef.current.onSelect(null);
           return;
@@ -387,7 +438,13 @@ export default function Viewer3D(p: Props) {
         if ((h.object as THREE.Mesh).userData.isStruct && h.instanceId !== undefined) {
           stateRef.current.onSelect(structIdsOf(s)[h.instanceId] ?? null);
         } else {
-          stateRef.current.onSelect((h.object as THREE.Mesh).userData.eid as string);
+          let cur: THREE.Object3D | null = h.object;
+          let eid: string | null = null;
+          while (cur && !eid) {
+            if (cur.userData?.eid) eid = cur.userData.eid as string;
+            cur = cur.parent;
+          }
+          stateRef.current.onSelect(eid);
         }
       };
       renderer.domElement.addEventListener('click', onClick);
@@ -406,7 +463,7 @@ export default function Viewer3D(p: Props) {
         ray.setFromCamera(ptr, s.camera);
         const targets: THREE.Object3D[] = [...s.meshes.values()].filter((m) => m.visible);
         if (s.struct && s.struct.visible) targets.push(s.struct);
-        const hits = ray.intersectObjects(targets);
+        const hits = ray.intersectObjects(targets, true);
         renderer.domElement.style.cursor = hits.length > 0 ? 'pointer' : 'grab';
       };
       renderer.domElement.addEventListener('pointermove', onPointerMove);
@@ -495,12 +552,22 @@ export default function Viewer3D(p: Props) {
       (s.struct.material as THREE.MeshStandardMaterial).wireframe = p.wireframe;
     }
 
+    const setHighlight = (obj: THREE.Object3D, color: number, intensity: number) => {
+      obj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const m = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+          if (m && m.emissive) {
+            m.emissive = new THREE.Color(color);
+            m.emissiveIntensity = intensity;
+          }
+        }
+      });
+    };
+
     // Clear previous highlight
     const prev = selectedRef.current;
     if (prev.mesh) {
-      const m = prev.mesh.material as THREE.MeshStandardMaterial;
-      m.emissive = new THREE.Color(0x000000);
-      m.emissiveIntensity = 0;
+      setHighlight(prev.mesh, 0x000000, 0);
     }
     if (prev.instance !== null && s.struct) {
       s.struct.setColorAt(prev.instance, new THREE.Color(COLORS.structure));
@@ -512,9 +579,7 @@ export default function Viewer3D(p: Props) {
     if (p.selectedId) {
       const mesh = s.meshes.get(p.selectedId) ?? null;
       if (mesh) {
-        const m = mesh.material as THREE.MeshStandardMaterial;
-        m.emissive = new THREE.Color(0xea7600);
-        m.emissiveIntensity = 0.5;
+        setHighlight(mesh, 0xea7600, 0.65);
         selectedRef.current = { mesh, instance: null };
       } else if (s.struct) {
         const idx = structIdsOf(s).indexOf(p.selectedId);
@@ -526,11 +591,16 @@ export default function Viewer3D(p: Props) {
       }
     }
 
-    s.meshes.forEach((mesh, eid) => {
+    s.meshes.forEach((obj, eid) => {
       const el = p.model.elements.find((e) => e.id === eid);
       const cat = el?.category ?? 'other';
-      mesh.visible = p.visibleTypes[cat] !== false;
-      (mesh.material as THREE.MeshStandardMaterial).wireframe = p.wireframe;
+      obj.visible = p.visibleTypes[cat] !== false;
+      obj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const m = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+          if (m && 'wireframe' in m) m.wireframe = p.wireframe;
+        }
+      });
     });
   }, [p.wireframe, p.showGrid, p.showAxes, p.visibleTypes, p.selectedId, p.autoRotate, p.model]);
 
@@ -601,7 +671,7 @@ export default function Viewer3D(p: Props) {
                   <circle cx="12" cy="14" r="1.75" fill="#e5e7eb" />
                   <line x1="12" y1="14" x2="22" y2="14" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" />
                   <line x1="12" y1="14" x2="12" y2="3" stroke="#facc15" strokeWidth="2.5" strokeLinecap="round" />
-                  <line x1="12" y1="14" x2="4" y2="21" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" />
+                  <line x1="12" y1="14" x2="4" y2="21" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" />
                 </svg>
                 <span>{azimuth} {azimuthDeg}°</span>
               </span>

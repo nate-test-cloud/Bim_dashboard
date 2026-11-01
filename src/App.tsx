@@ -11,9 +11,9 @@ import {
 } from './lib/calculations';
 import { parseClimateCsv, SAMPLE_CLIMATE_CSV, type ClimateTable } from './lib/climateCsv';
 import { exportPdf, toCsv, toJson, downloadText, type ExportBundle } from './lib/exports';
-import { parseIfcText, validateIfcFile } from './lib/ifcParser';
+import { parseIfcBuffer, validateIfcFile } from './lib/ifcParser';
 import { loadProject, saveProject, idbSet } from './lib/persistence';
-import { CLIMATE_PRESETS, demoTower, sampleBuilding } from './lib/sampleBuilding';
+import { CLIMATE_PRESETS, sampleBuilding } from './lib/sampleBuilding';
 import {
   fetchSiteClimateData,
   generateMonthlySeriesForSite,
@@ -649,21 +649,7 @@ export default function App() {
     setNotice({ kind: 'ok', text: 'Design values reset to model-derived defaults.' });
   };
 
-  const loadSample = () => {
-    const m = sampleBuilding();
-    setModel(m);
-    setDesign((d) => ({ ...designFromModel(m), euiTargetKwhM2Yr: d.euiTargetKwhM2Yr, carbonFactorKgPerKwh: d.carbonFactorKgPerKwh, equivHeatingHours: d.equivHeatingHours, equivCoolingHours: d.equivCoolingHours }));
-    setSelectedId(null);
-    setModelStatus('Sample building loaded');
-    setNotice({ kind: 'ok', text: 'Sample office building loaded (walls, windows, roof, floor identifiable).' });
-  };
 
-  const loadDemoTower = () => {
-    setModel(demoTower());
-    setSelectedId(null);
-    setModelStatus('Demo tower (abstract)');
-    setNotice({ kind: 'warn', text: 'Abstract demo tower shown — preserved from prototype; not suitable for envelope analysis.' });
-  };
 
   const handleBimFile = async (file: File) => {
     setImportLog([]);
@@ -716,10 +702,10 @@ export default function App() {
       log(`Reading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)…`);
       if (file.size > 150 * 1024 * 1024)
         log('Note: large file — parsing runs locally in your browser and may take a while. Progress is shown below.');
-      const text = await file.text();
+      const buf = await file.arrayBuffer();
       if (cancelRef.current) { log('Cancelled by user.'); return; }
       // Show the ACTUAL imported geometry: parse then replace the viewer model.
-      const parsed = await parseIfcText(text, file.name, (p) => {
+      const parsed = await parseIfcBuffer(buf, file.name, (p) => {
         setImportProgress(Math.round(p.fraction * 100));
         log(`${p.phase}…`);
       });
@@ -938,10 +924,8 @@ export default function App() {
                     {importLog.length > 0 && <pre className="log" style={{ marginTop: 8, maxHeight: 80, fontSize: 10 }}>{importLog.join('\n')}</pre>}
                   </div>
 
-                  <div className="import-popover-footer">
-                    <button className="btn" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => { loadSample(); setDlg(null); }}>Sample Office</button>
-                    <button className="btn" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => { loadDemoTower(); setDlg(null); }}>Demo Tower</button>
-                    <button className="btn" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => setDlg(null)} disabled={importBusy}>Close</button>
+                  <div className="import-popover-footer" style={{ justifyContent: 'flex-end' }}>
+                    <button className="btn" style={{ fontSize: 11, padding: '3px 12px' }} onClick={() => setDlg(null)} disabled={importBusy}>Close</button>
                   </div>
                 </div>
               </>

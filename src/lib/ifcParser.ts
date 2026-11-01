@@ -19,7 +19,8 @@
  * Supported: IFC2X3 + IFC4 STEP files (.ifc). Revit .rvt is NOT supported —
  * callers must surface the "export to IFC" guidance.
  */
-import type { BuildingElement, BuildingModel, Provenance } from './types';
+import * as WebIFC from 'web-ifc';
+import type { BuildingElement, BuildingModel, MeshGeometryData, Provenance } from './types';
 
 interface RawEntity {
   id: number;
@@ -286,7 +287,7 @@ function maxFaceArea(b: Box): number {
   return Math.max(dx * dy, dx * dz, dy * dz);
 }
 
-export async function parseIfcText(
+async function parseIfcTextInternal(
   text: string,
   fileName: string,
   onProgress?: (p: IfcParseProgress) => void,
@@ -399,7 +400,12 @@ export async function parseIfcText(
       y = Math.abs(z[2]) < 0.9 ? norm(cross(z, [0, 0, 1]))! : norm(cross(z, [0, 1, 0]))!;
     }
     const x = cross(y, z);
-    return [x[0], x[1], x[2], p[0], y[0], y[1], y[2], p[1], z[0], z[1], z[2], p[2], 0, 0, 0, 1];
+    return [
+      x[0], y[0], z[0], p[0],
+      x[1], y[1], z[1], p[1],
+      x[2], y[2], z[2], p[2],
+      0,    0,    0,    1,
+    ];
   };
   const placeCache = new Map<number, Mat4>();
   const worldOfPlacement = (id: number, seen = new Set<number>()): Mat4 => {
@@ -419,7 +425,14 @@ export async function parseIfcText(
   const profileBox = (id: number): Box | null => {
     const t = T(id);
     const a = E(id);
-    if (t === 'IFCRECTANGLEPROFILEDEF') {
+    if (
+      t === 'IFCRECTANGLEPROFILEDEF' ||
+      t === 'IFCISHAPEPROFILEDEF' ||
+      t === 'IFCLSHAPEPROFILEDEF' ||
+      t === 'IFCTSHAPEPROFILEDEF' ||
+      t === 'IFCUSHAPEPROFILEDEF' ||
+      t === 'IFCCSHAPEPROFILEDEF'
+    ) {
       const xd = numVal(a[3] ?? '') ?? 0;
       const yd = numVal(a[4] ?? '') ?? 0;
       if (!(xd > 0 && yd > 0)) return null;
@@ -462,14 +475,18 @@ export async function parseIfcText(
     }
     if (t === 'IFCARBITRARYCLOSEDPROFILEDEF' || t === 'IFCARBITRARYPROFILEDEFWITHVOIDS') {
       const curve = refId(a[2] ?? '');
-      if (curve && T(curve) === 'IFCPOLYLINE') {
+      if (curve) {
         const pts: Vec3[] = [];
-        for (const p of refList(E(curve)[0] ?? '()')) {
-          const pt = getPoint(p);
-          if (pt) pts.push(pt);
-          if (pts.length > 2000) break;
+        if (T(curve) === 'IFCPOLYLINE') {
+          for (const p of refList(E(curve)[0] ?? '()')) {
+            const pt = getPoint(p);
+            if (pt) pts.push(pt);
+            if (pts.length > 2000) break;
+          }
+        } else {
+          collectPoints(curve, 0, new Set(), pts);
         }
-        return boxOfPoints(pts);
+        if (pts.length > 0) return boxOfPoints(pts);
       }
       return null;
     }
@@ -518,7 +535,12 @@ export async function parseIfcText(
         }
       } else if (t === 'IFCMAPPEDITEM') {
         const mapId = refId(a[0] ?? '');
-        const tgt = placementMatrix(refId(a[1] ?? '') ?? -1);
+        const tgtId = refId(a[1] ?? '');
+        const tgt = tgtId
+          ? T(tgtId) === 'IFCCARTESIANTRANSFORMATIONOPERATOR3D'
+            ? operatorMatrix(tgtId)
+            : placementMatrix(tgtId)
+          : [...IDENT];
         if (mapId && T(mapId) === 'IFCREPRESENTATIONMAP') {
           const ma = E(mapId);
           const org = placementMatrix(refId(ma[0] ?? '') ?? -1);
@@ -601,10 +623,10 @@ export async function parseIfcText(
     const y = norm(cross(z, x)) ?? ([0, 1, 0] as Vec3);
     const xx = cross(y, z);
     return [
-      xx[0] * sc, x[1] * sc, x[2] * sc, org[0],
-      y[0] * sc, y[1] * sc, y[2] * sc, org[1],
-      z[0] * sc, z[1] * sc, z[2] * sc, org[2],
-      0, 0, 0, 1,
+      xx[0] * sc, y[0] * sc, z[0] * sc, org[0],
+      xx[1] * sc, y[1] * sc, z[1] * sc, org[1],
+      xx[2] * sc, y[2] * sc, z[2] * sc, org[2],
+      0,          0,          0,          1,
     ];
   };
 
@@ -881,12 +903,23 @@ export async function parseIfcText(
   }
 
   for (let idx = 0; idx < items.length; idx++) {
-    const { e, cat } = items[idx];
+    const { e, cat: initialCat } = items[idx];
+    let cat = initialCat;
     const a = E(e.id);
     const globalId = strVal(a[0] ?? '');
     const name = strVal(a[2] ?? '') || `${e.type} #${e.id}`;
     const info = infoFor(e.id);
     const q = info?.quantities ?? {};
+
+    // Reclassify glass curtain wall panels to 'window' so they render as glass, not solid orange structure
+    if (
+      cat === 'structure' &&
+      e.type === 'IFCPLATE' &&
+      ((info?.materials ?? []).some((m) => /vidrio|glass|cristal|glaz/i.test(m)) ||
+        /acristalado|vidrio|glass|glaz|cristal|panel/i.test(name))
+    ) {
+      cat = 'window';
+    }
 
     // ---- world-space geometry (oriented box when single extrusion, else AABB) ----
     let worldBox: Box | null = null;
@@ -906,19 +939,25 @@ export async function parseIfcText(
         }
       }
       for (const lb of localBoxes(repId)) {
-          const corners: Vec3[] = [];
-          for (let i = 0; i < 8; i++)
-            corners.push(
-              xform(occWorld, [
-                i & 1 ? lb.max[0] : lb.min[0],
-                i & 2 ? lb.max[1] : lb.min[1],
-                i & 4 ? lb.max[2] : lb.min[2],
-              ]),
-            );
-          const wb = boxOfPoints(corners);
-          if (wb) worldBox = unionBox(worldBox, wb);
-        }
+        const corners: Vec3[] = [];
+        for (let i = 0; i < 8; i++)
+          corners.push(
+            xform(occWorld, [
+              i & 1 ? lb.max[0] : lb.min[0],
+              i & 2 ? lb.max[1] : lb.min[1],
+              i & 4 ? lb.max[2] : lb.min[2],
+            ]),
+          );
+        const wb = boxOfPoints(corners);
+        if (wb) worldBox = unionBox(worldBox, wb);
       }
+    }
+
+    // Skip empty aggregate containers whose components are already parsed
+    if (!worldBox && !oriented && (e.type === 'IFCCURTAINWALL' || e.type === 'IFCSTAIR')) {
+      continue;
+    }
+
     if (worldBox) {
       geomResolved++;
       overallMin = overallMin
@@ -1002,21 +1041,9 @@ export async function parseIfcText(
         z: (worldBox.min[1] + worldBox.max[1]) / 2,
       };
     } else {
-      // Unresolved geometry: spread on a fallback grid (honest approximation).
-      const wb = Math.sqrt(Math.max(areaM2, 1));
-      dims =
-        cat === 'wall'
-          ? { x: Math.min(wb, 12), y: 3, z: 0.25 }
-          : cat === 'window' || cat === 'door'
-            ? { x: Math.min(wb, 4), y: 1.8, z: 0.12 }
-            : cat === 'roof' || cat === 'floor'
-              ? { x: Math.min(wb, 12), y: 0.25, z: Math.min(wb, 12) }
-              : { x: 1, y: 1, z: 1 };
-      center = {
-        x: (geomFallback % 40) * 4 - 80,
-        y: cat === 'roof' ? 7 : cat === 'floor' ? 0 : 3,
-        z: Math.floor(geomFallback / 40) * 5 - 40,
-      };
+      // Non-geometric element: do not create rogue visual boxes across the scene
+      dims = undefined;
+      center = undefined;
     }
 
     if (cat === 'structure') structureCount++;
@@ -1121,6 +1148,366 @@ export async function parseIfcText(
   };
 }
 
+let ifcApiSingleton: WebIFC.IfcAPI | null = null;
+let apiInitPromise: Promise<WebIFC.IfcAPI> | null = null;
+
+async function getIfcApi(): Promise<WebIFC.IfcAPI> {
+  if (ifcApiSingleton) return ifcApiSingleton;
+  if (!apiInitPromise) {
+    apiInitPromise = (async () => {
+      const api = new WebIFC.IfcAPI();
+      api.SetLogLevel(WebIFC.LogLevel.LOG_LEVEL_ERROR);
+      await api.Init((path: string) => {
+        if (typeof window !== 'undefined') {
+          return `/wasm/${path}`;
+        }
+        return path;
+      });
+      ifcApiSingleton = api;
+      return api;
+    })();
+  }
+  return apiInitPromise;
+}
+
+export async function parseIfcWithWebIfc(
+  bytes: Uint8Array,
+  fileName: string,
+  onProgress?: (p: IfcParseProgress) => void,
+): Promise<BuildingModel> {
+  onProgress?.({ phase: 'Initializing Web-IFC WebAssembly kernel', fraction: 0.1 });
+  await tick();
+  const ifcApi = await getIfcApi();
+
+  onProgress?.({ phase: 'Opening IFC model', fraction: 0.25 });
+  await tick();
+  const modelID = ifcApi.OpenModel(bytes, {
+    COORDINATE_TO_ORIGIN: false,
+    ALLOW_INCOMPATIBLE_SCHEMA_ALIASES: true,
+  });
+
+  if (modelID < 0) {
+    throw new Error('Web-IFC could not open model data.');
+  }
+
+  try {
+    const schema = ifcApi.GetModelSchema(modelID) || 'IFC2X3';
+    onProgress?.({ phase: 'Evaluating 3D geometry & boolean clippings', fraction: 0.45 });
+    await tick();
+
+    const meshMap = new Map<number, MeshGeometryData[]>();
+    const elementBounds = new Map<number, { min: [number, number, number]; max: [number, number, number] }>();
+    const elementMeshAreas = new Map<number, number>();
+
+    let overallMin: [number, number, number] | null = null;
+    let overallMax: [number, number, number] | null = null;
+
+    ifcApi.StreamAllMeshes(modelID, (m) => {
+      const geoms: MeshGeometryData[] = [];
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      let totalTriArea = 0;
+
+      for (let i = 0; i < m.geometries.size(); i++) {
+        const g = m.geometries.get(i);
+        const geomData = ifcApi.GetGeometry(modelID, g.geometryExpressID);
+        const vArr = ifcApi.GetVertexArray(geomData.GetVertexData(), geomData.GetVertexDataSize());
+        const iArr = ifcApi.GetIndexArray(geomData.GetIndexData(), geomData.GetIndexDataSize());
+
+        const numV = vArr.length / 6;
+        const positions = new Float32Array(numV * 3);
+        const normals = new Float32Array(numV * 3);
+        const tr = g.flatTransformation;
+
+        for (let k = 0; k < numV; k++) {
+          const vx = vArr[k * 6];
+          const vy = vArr[k * 6 + 1];
+          const vz = vArr[k * 6 + 2];
+
+          // Apply transformation matrix (OpenGL column-major 4x4)
+          const wx = tr[0] * vx + tr[4] * vy + tr[8] * vz + tr[12];
+          const wy = tr[1] * vx + tr[5] * vy + tr[9] * vz + tr[13];
+          const wz = tr[2] * vx + tr[6] * vy + tr[10] * vz + tr[14];
+
+          positions[k * 3] = wx;
+          positions[k * 3 + 1] = wy;
+          positions[k * 3 + 2] = wz;
+
+          // Normal rotation (3x3)
+          const nx = vArr[k * 6 + 3];
+          const ny = vArr[k * 6 + 4];
+          const nz = vArr[k * 6 + 5];
+          const rnx = tr[0] * nx + tr[4] * ny + tr[8] * nz;
+          const rny = tr[1] * nx + tr[5] * ny + tr[9] * nz;
+          const rnz = tr[2] * nx + tr[6] * ny + tr[10] * nz;
+          const nl = Math.hypot(rnx, rny, rnz) || 1;
+
+          normals[k * 3] = rnx / nl;
+          normals[k * 3 + 1] = rny / nl;
+          normals[k * 3 + 2] = rnz / nl;
+
+          if (wx < minX) minX = wx; if (wx > maxX) maxX = wx;
+          if (wy < minY) minY = wy; if (wy > maxY) maxY = wy;
+          if (wz < minZ) minZ = wz; if (wz > maxZ) maxZ = wz;
+        }
+
+        const indices = new Uint32Array(iArr);
+
+        for (let t = 0; t < indices.length; t += 3) {
+          const i0 = indices[t] * 3;
+          const i1 = indices[t + 1] * 3;
+          const i2 = indices[t + 2] * 3;
+
+          const ax = positions[i1] - positions[i0];
+          const ay = positions[i1 + 1] - positions[i0 + 1];
+          const az = positions[i1 + 2] - positions[i0 + 2];
+
+          const bx = positions[i2] - positions[i0];
+          const by = positions[i2 + 1] - positions[i0 + 1];
+          const bz = positions[i2 + 2] - positions[i0 + 2];
+
+          const cx = ay * bz - az * by;
+          const cy = az * bx - ax * bz;
+          const cz = ax * by - ay * bx;
+
+          totalTriArea += 0.5 * Math.hypot(cx, cy, cz);
+        }
+
+        geoms.push({
+          positions,
+          normals,
+          indices,
+          color: [g.color.x, g.color.y, g.color.z, g.color.w],
+        });
+      }
+
+      if (geoms.length > 0) {
+        meshMap.set(m.expressID, geoms);
+        elementBounds.set(m.expressID, { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] });
+        elementMeshAreas.set(m.expressID, totalTriArea);
+
+        if (!overallMin) {
+          overallMin = [minX, minY, minZ];
+          overallMax = [maxX, maxY, maxZ];
+        } else {
+          overallMin[0] = Math.min(overallMin[0], minX);
+          overallMin[1] = Math.min(overallMin[1], minY);
+          overallMin[2] = Math.min(overallMin[2], minZ);
+          overallMax![0] = Math.max(overallMax![0], maxX);
+          overallMax![1] = Math.max(overallMax![1], maxY);
+          overallMax![2] = Math.max(overallMax![2], maxZ);
+        }
+      }
+    });
+
+    onProgress?.({ phase: 'Extracting building elements & property sets', fraction: 0.75 });
+    await tick();
+
+    // Storeys
+    const storeyIDs = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCBUILDINGSTOREY, true);
+    const storeys: string[] = [];
+    for (let i = 0; i < storeyIDs.size(); i++) {
+      const s = ifcApi.GetLine(modelID, storeyIDs.get(i));
+      if (s?.Name?.value) storeys.push(s.Name.value);
+    }
+
+    // Spaces
+    const spaceIDs = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCSPACE, true);
+    const spaceCount = spaceIDs.size();
+
+    const elements: BuildingElement[] = [];
+    let uFound = 0;
+    let uMissing = 0;
+    let totalFloorArea = 0;
+
+    for (const [expressID, geoms] of meshMap.entries()) {
+      const line = ifcApi.GetLine(modelID, expressID);
+      const typeCode = ifcApi.GetLineType(modelID, expressID);
+      const typeName = (ifcApi.GetNameFromTypeCode(typeCode) || '').toUpperCase();
+
+      let cat: BuildingElement['category'] = 'other';
+      if (/WALL/i.test(typeName)) cat = 'wall';
+      else if (/WINDOW/i.test(typeName)) cat = 'window';
+      else if (/DOOR/i.test(typeName)) cat = 'door';
+      else if (/ROOF/i.test(typeName)) cat = 'roof';
+      else if (/SLAB/i.test(typeName)) {
+        const pType = String(line?.PredefinedType?.value || '').toUpperCase();
+        const nameUpper = String(line?.Name?.value || '').toUpperCase();
+        if (pType === 'ROOF' || /DACH|ROOF/i.test(nameUpper)) {
+          cat = 'roof';
+        } else {
+          cat = 'floor';
+        }
+      } else if (/COLUMN|BEAM|MEMBER|PLATE|FOOTING|STAIR|RAMP|COVERING|PROXY/i.test(typeName)) {
+        cat = 'structure';
+      }
+
+      // Reclassify transparent plates / glass panels
+      if (cat === 'structure' && /PLATE/i.test(typeName)) {
+        const nameUpper = String(line?.Name?.value || '').toUpperCase();
+        if (/GLASS|VIDRIO|CRISTAL|GLAZ|PANEL/i.test(nameUpper)) {
+          cat = 'window';
+        }
+      }
+
+      const name = line?.Name?.value || `${typeName} #${expressID}`;
+      const globalId = line?.GlobalId?.value || String(expressID);
+
+      const psets = await ifcApi.properties.getPropertySets(modelID, expressID, true);
+      let uVal: number | undefined;
+      let areaM2: number | undefined;
+      let material: string | undefined;
+
+      for (const ps of psets) {
+        if (!ps) continue;
+        if (ps.HasProperties) {
+          for (const prop of ps.HasProperties) {
+            const pName = prop.Name?.value || '';
+            const val = prop.NominalValue?.value ?? prop.NominalValue?._representationValue;
+            if (/thermal|uvalue|u_wert|transmittance/i.test(pName) && typeof val === 'number' && val > 0 && val < 10) {
+              uVal = val;
+            }
+            if (/area|flaeche/i.test(pName) && typeof val === 'number' && val > 0 && val < 100000) {
+              if (!areaM2) areaM2 = val;
+            }
+          }
+        }
+        if (ps.Quantities) {
+          for (const q of ps.Quantities) {
+            const qName = q.Name?.value || '';
+            const val = q.AreaValue?.value ?? q.NetAreaValue?.value ?? q.GrossAreaValue?.value ?? q.LengthValue?.value;
+            if (/area|sidearea/i.test(qName) && typeof val === 'number' && val > 0) {
+              areaM2 = val;
+            }
+          }
+        }
+      }
+
+      if (line?.ObjectType?.value && typeof line.ObjectType.value === 'string') {
+        material = line.ObjectType.value;
+      }
+
+      const bounds = elementBounds.get(expressID);
+      const bMin = bounds ? bounds.min : [0, 0, 0];
+      const bMax = bounds ? bounds.max : [1, 1, 1];
+      const dims = {
+        x: Math.max(bMax[0] - bMin[0], 0.05),
+        y: Math.max(bMax[1] - bMin[1], 0.05),
+        z: Math.max(bMax[2] - bMin[2], 0.05),
+      };
+      const center = {
+        x: (bMin[0] + bMax[0]) / 2,
+        y: (bMin[1] + bMax[1]) / 2,
+        z: (bMin[2] + bMax[2]) / 2,
+      };
+
+      const triArea = elementMeshAreas.get(expressID) || 0;
+      let areaProv: Provenance = 'derived';
+      if (areaM2 && areaM2 > 0) {
+        areaProv = 'extracted';
+      } else {
+        areaM2 = triArea > 0 ? triArea / 2 : Math.max(dims.x * dims.y, dims.x * dims.z, dims.y * dims.z);
+      }
+
+      if (cat === 'floor') {
+        totalFloorArea += areaM2;
+      }
+
+      let uProv: Provenance = 'unknown';
+      if (uVal !== undefined) {
+        uProv = 'extracted';
+        if (cat !== 'structure') uFound++;
+      } else if (cat !== 'structure') {
+        uMissing++;
+      }
+
+      elements.push({
+        id: String(expressID),
+        globalId,
+        ifcType: typeName,
+        name,
+        category: cat,
+        areaM2: +areaM2.toFixed(2),
+        areaProvenance: areaProv,
+        uValueWm2K: uVal ? +uVal.toFixed(3) : undefined,
+        uProvenance: uProv,
+        material,
+        dims,
+        center,
+        meshGeometries: geoms,
+      });
+    }
+
+    if (elements.length === 0) {
+      throw new Error('No envelope or structural elements found in IFC model.');
+    }
+
+    const height = overallMin && overallMax ? Math.max(0.5, overallMax[1] - overallMin[1]) : 3.2;
+    const floorAreaM2 = totalFloorArea > 0 ? totalFloorArea : 200;
+    const volumeM3 = floorAreaM2 * height;
+    const projName = fileName.replace(/\.ifc$/i, '');
+
+    const warnings: string[] = [
+      `Parsed with Web-IFC high-fidelity WebAssembly geometry kernel.`,
+      `${elements.length} elements evaluated with exact 3D triangulated B-Rep & boolean cuts.`,
+    ];
+    if (uFound > 0) warnings.push(`${uFound} elements carry extracted U-values; ${uMissing} use defaults.`);
+    else warnings.push('No thermal transmittance (U-values) found in property sets — defaults/assumptions will be used.');
+
+    onProgress?.({ phase: 'Done', fraction: 1 });
+
+    return {
+      name: projName || 'Imported IFC model',
+      source: 'ifc',
+      sourceFileName: fileName,
+      schema,
+      storeys: storeys.length ? storeys : ['(storeys not identified)'],
+      spaces: spaceCount,
+      elements,
+      floorAreaM2: +floorAreaM2.toFixed(1),
+      floorAreaProvenance: totalFloorArea > 0 ? 'derived' : 'assumption',
+      volumeM3: +volumeM3.toFixed(1),
+      volumeProvenance: totalFloorArea > 0 ? 'derived' : 'assumption',
+      warnings,
+      geometryFidelity: 'actual',
+    };
+  } finally {
+    ifcApi.CloseModel(modelID);
+  }
+}
+
+export async function parseIfcBuffer(
+  buffer: Uint8Array | ArrayBuffer,
+  fileName: string,
+  onProgress?: (p: IfcParseProgress) => void,
+): Promise<BuildingModel> {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  try {
+    return await parseIfcWithWebIfc(bytes, fileName, onProgress);
+  } catch {
+    // Fall back to text parser for test strings or incomplete STEP mock snippets
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    return await parseIfcTextInternal(text, fileName, onProgress);
+  }
+}
+
+export async function parseIfcText(
+  text: string,
+  fileName: string,
+  onProgress?: (p: IfcParseProgress) => void,
+): Promise<BuildingModel> {
+  // If text is a full IFC file, attempt web-ifc first
+  if (text.includes('ISO-10303-21;') && text.length > 5000) {
+    try {
+      const bytes = new TextEncoder().encode(text);
+      return await parseIfcWithWebIfc(bytes, fileName, onProgress);
+    } catch {
+      // Fall through to text internal parser
+    }
+  }
+  return await parseIfcTextInternal(text, fileName, onProgress);
+}
+
 function tick(): Promise<void> {
   return new Promise((r) => setTimeout(r, 0));
 }
@@ -1132,8 +1519,5 @@ export function validateIfcFile(file: File): string | null {
     return `Unsupported file type "${file.name}". Upload an IFC (.ifc) STEP file, or a previously exported normalized model (.json).`;
   }
   if (file.size === 0) return 'File is empty.';
-  // No upper size cap: files of any size are accepted. Very large models are
-  // parsed locally in the browser, so parsing time and memory use grow with
-  // file size — the import dialog reports progress while it works.
   return null;
 }

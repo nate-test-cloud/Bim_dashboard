@@ -33,6 +33,14 @@ export type ElementCategory =
   | 'space'
   | 'other';
 
+export interface MeshGeometryData {
+  positions: Float32Array;
+  normals: Float32Array;
+  indices: Uint32Array;
+  color?: [number, number, number, number];
+  transform?: number[];
+}
+
 export interface BuildingElement {
   id: string;
   globalId?: string;
@@ -57,6 +65,7 @@ export interface BuildingElement {
    */
   rotation?: [number, number, number, number];
   storey?: string;
+  meshGeometries?: MeshGeometryData[];
 }
 
 export interface BuildingModel {

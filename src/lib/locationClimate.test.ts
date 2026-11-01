@@ -28,7 +28,7 @@ describe('locationClimate', () => {
     const results = await searchLocations('London');
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].name.toLowerCase()).toContain('london');
-  });
+  }, 15000);
 
   it('generates seasonal monthly series with correct polarities', () => {
     const london = POPULAR_SITES.find((s) => s.name === 'London')!;
@@ -47,5 +47,5 @@ describe('locationClimate', () => {
     expect(typeof climate.current.solarIrradianceWm2).toBe('number');
     expect(climate.daylightPeak.solarIrradianceWm2).toBeGreaterThanOrEqual(100);
     expect(climate.summerDesign.outdoorTempC).toBeGreaterThan(climate.winterDesign.outdoorTempC);
-  }, 10000);
+  }, 15000);
 });

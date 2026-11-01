@@ -16,7 +16,8 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "recharts": "^3.10.1",
-    "three": "^0.186.1"
+    "three": "^0.186.1",
+    "web-ifc": "^0.0.78"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
