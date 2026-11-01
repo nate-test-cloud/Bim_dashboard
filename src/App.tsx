@@ -256,8 +256,8 @@ export default function App() {
   // view toggles
   const [wireframe, setWireframe] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
-  const [showAxes, setShowAxes] = useState(false);
   const [autoRotate, setAutoRotate] = useState(false);
+  const [pickEnabled, setPickEnabled] = useState(true);
   const [visibleTypes, setVisibleTypes] = useState<Record<string, boolean>>({
     wall: true, window: true, door: true, roof: true, floor: true, structure: true, other: true, tower: true,
   });
@@ -295,6 +295,46 @@ export default function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Global CAD Hotkeys (B: Pick/Deselect, Z: Wireframe, G: Grid, Space: Turntable, Esc: Deselect)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (e.key === 'b' || e.key === 'B') {
+        e.preventDefault();
+        if (selectedId) {
+          setSelectedId(null);
+          setNotice({ kind: 'ok', text: 'Element deselected' });
+        } else {
+          setPickEnabled((prev) => {
+            const next = !prev;
+            setNotice({
+              kind: 'ok',
+              text: next ? 'Pick tool active — click 3D elements to inspect' : 'Pick tool paused — orbit navigation mode',
+            });
+            return next;
+          });
+        }
+      } else if (e.key === 'Escape') {
+        if (selectedId) {
+          setSelectedId(null);
+          setNotice({ kind: 'ok', text: 'Element deselected' });
+        }
+      } else if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault();
+        setWireframe((v) => !v);
+      } else if (e.key === 'g' || e.key === 'G') {
+        e.preventDefault();
+        setShowGrid((v) => !v);
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        setAutoRotate((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId]);
 
   const summary = useMemo(() => summarizeEnvelope(model), [model]);
   const scaled = useMemo(
@@ -813,24 +853,6 @@ export default function App() {
           <span className="brand-model">{model.name}</span>
         </div>
 
-        {/* Clean Workstation Model Switcher */}
-        <div className="topbar-model-picker">
-          <button
-            className={`topbar-model-btn ${model.name === 'Sample Office (Parametric)' ? 'active' : ''}`}
-            onClick={loadSample}
-            title="Load Parametric Sample Building"
-          >
-            Sample Office
-          </button>
-          <button
-            className={`topbar-model-btn ${model.name.includes('Tower') ? 'active' : ''}`}
-            onClick={loadDemoTower}
-            title="Load Twisting Glass Tower"
-          >
-            Tower Model
-          </button>
-        </div>
-
         {siteLocation && (
           <div className="topbar-meta">
             <span className="topbar-loc">📍 {siteLocation.name}, {siteLocation.country}</span>
@@ -918,6 +940,7 @@ export default function App() {
 
                   <div className="import-popover-footer">
                     <button className="btn" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => { loadSample(); setDlg(null); }}>Sample Office</button>
+                    <button className="btn" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => { loadDemoTower(); setDlg(null); }}>Demo Tower</button>
                     <button className="btn" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => setDlg(null)} disabled={importBusy}>Close</button>
                   </div>
                 </div>
@@ -952,23 +975,36 @@ export default function App() {
             model={model}
             wireframe={wireframe}
             showGrid={showGrid}
-            showAxes={showAxes}
             visibleTypes={visibleTypes}
             selectedId={selectedId}
             onSelect={(id) => setSelectedId(id)}
             autoRotate={autoRotate}
+            pickEnabled={pickEnabled}
             onToggleAutoRotate={() => setAutoRotate((v) => !v)}
             onToggleWireframe={() => setWireframe((v) => !v)}
             onToggleGrid={() => setShowGrid((v) => !v)}
-            onToggleAxes={() => setShowAxes((v) => !v)}
           />
 
           {/* Blender-Style Left Viewport 'T' Shelf Toolbar */}
           <div className="cad-left-shelf">
             <button
-              className={`shelf-tool-btn ${!autoRotate ? 'active' : ''}`}
-              title="Select / Pick Element (B)"
-              onClick={() => {}}
+              className={`shelf-tool-btn ${pickEnabled ? 'active' : ''}`}
+              title={selectedId ? 'Clear Element Selection (Esc / B)' : pickEnabled ? 'Selection / Pick Element Tool (Click element to inspect) (B)' : 'Enable Element Pick Tool (B)'}
+              onClick={() => {
+                if (selectedId) {
+                  setSelectedId(null);
+                  setNotice({ kind: 'ok', text: 'Element deselected' });
+                } else {
+                  setPickEnabled((prev) => {
+                    const next = !prev;
+                    setNotice({
+                      kind: 'ok',
+                      text: next ? 'Pick tool active — click 3D elements to inspect' : 'Pick tool paused — orbit navigation mode',
+                    });
+                    return next;
+                  });
+                }
+              }}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l7 18 3-7 7-3L3 3z"/></svg>
             </button>
@@ -992,13 +1028,6 @@ export default function App() {
               onClick={() => setShowGrid((v) => !v)}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
-            </button>
-            <button
-              className={`shelf-tool-btn ${showAxes ? 'active' : ''}`}
-              title="Toggle World XYZ Axes"
-              onClick={() => setShowAxes((v) => !v)}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="12" x2="12" y2="2"/><line x1="12" y1="12" x2="22" y2="12"/><line x1="12" y1="12" x2="5" y2="19"/></svg>
             </button>
           </div>
 

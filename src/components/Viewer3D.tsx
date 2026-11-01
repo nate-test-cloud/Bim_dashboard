@@ -7,11 +7,12 @@ interface Props {
   model: BuildingModel;
   wireframe: boolean;
   showGrid: boolean;
-  showAxes: boolean;
+  showAxes?: boolean;
   visibleTypes: Record<string, boolean>;
   selectedId: string | null;
   onSelect: (id: string | null, info?: string) => void;
   autoRotate: boolean;
+  pickEnabled?: boolean;
   onToggleAutoRotate?: () => void;
   onToggleWireframe?: () => void;
   onToggleGrid?: () => void;
@@ -163,16 +164,74 @@ export default function Viewer3D(p: Props) {
       fillLight.position.set(-30, 20, -30);
       scene.add(fillLight);
 
-      // Precision CAD Grid (Rhino / Blender style)
-      const grid = new THREE.GridHelper(80, 40, 0x444850, 0x27292f);
+      // Precision CAD Expansive Ground Grid covering the entire field
+      const gridSize = 800;
+      const gridDivisions = 400; // 2-unit CAD resolution across 800m field
+      const halfSize = gridSize / 2;
+      const center = gridDivisions / 2;
+
+      // Group containing full-field grid and prominent colored center axis lines
+      const grid = new THREE.Group();
       grid.name = 'grid';
       grid.position.y = -0.02;
       grid.visible = stateRef.current.showGrid;
+
+      // Subtle CAD graphite grid for the expansive field
+      const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x272a31, 0x272a31);
+      (gridHelper.material as THREE.LineBasicMaterial).transparent = true;
+      (gridHelper.material as THREE.LineBasicMaterial).opacity = 0.85;
+
+      // Color the center lines in GridHelper's geometry: X = Red, Y = Yellow
+      const colorAttr = gridHelper.geometry.attributes.color as THREE.BufferAttribute;
+      if (colorAttr) {
+        const redColor = new THREE.Color(0xef4444);
+        const yellowColor = new THREE.Color(0xfacc15);
+        // Line 1: X axis (center * 4 + 0, center * 4 + 1)
+        colorAttr.setXYZ(center * 4 + 0, redColor.r, redColor.g, redColor.b);
+        colorAttr.setXYZ(center * 4 + 1, redColor.r, redColor.g, redColor.b);
+        // Line 2: Ground Y axis (center * 4 + 2, center * 4 + 3)
+        colorAttr.setXYZ(center * 4 + 2, yellowColor.r, yellowColor.g, yellowColor.b);
+        colorAttr.setXYZ(center * 4 + 3, yellowColor.r, yellowColor.g, yellowColor.b);
+        colorAttr.needsUpdate = true;
+      }
+      grid.add(gridHelper);
+
+      // Dedicated crisp center axis overlay (elevated slightly at y=0.005 to avoid z-fighting)
+      const centerAxesGeo = new THREE.BufferGeometry();
+      const centerAxesPos = new Float32Array([
+        // X-axis main center line (from -halfSize to +halfSize along X)
+        -halfSize, 0.005, 0,
+        halfSize, 0.005, 0,
+        // Y-axis ground main center line (from -halfSize to +halfSize along depth/Y)
+        0, 0.005, -halfSize,
+        0, 0.005, halfSize,
+      ]);
+      const centerAxesCols = new Float32Array([
+        // X axis: Vibrant CAD Red (#ef4444)
+        0.937, 0.267, 0.267,
+        0.937, 0.267, 0.267,
+        // Y axis: Vibrant CAD Yellow (#facc15)
+        0.980, 0.800, 0.082,
+        0.980, 0.800, 0.082,
+      ]);
+      centerAxesGeo.setAttribute('position', new THREE.BufferAttribute(centerAxesPos, 3));
+      centerAxesGeo.setAttribute('color', new THREE.BufferAttribute(centerAxesCols, 3));
+      const centerAxesMat = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        toneMapped: false,
+        depthWrite: false,
+      });
+      const centerAxesLines = new THREE.LineSegments(centerAxesGeo, centerAxesMat);
+      grid.add(centerAxesLines);
+
       scene.add(grid);
 
-      const axes = new THREE.AxesHelper(14);
+      // World Axes Helper (hidden by default unless explicitly toggled)
+      const axes = new THREE.AxesHelper(24);
       axes.name = 'axes';
-      axes.visible = stateRef.current.showAxes;
+      axes.setColors(new THREE.Color(0xef4444), new THREE.Color(0xfacc15), new THREE.Color(0x38bdf8));
+      axes.position.y = 0.01;
+      axes.visible = Boolean(stateRef.current.showAxes);
       scene.add(axes);
 
       const meshes = new Map<string, THREE.Mesh>();
@@ -310,6 +369,7 @@ export default function Viewer3D(p: Props) {
 
       // Click selection
       const onClick = (ev: MouseEvent) => {
+        if (stateRef.current.pickEnabled === false) return;
         const s = sceneRef.current;
         if (!s) return;
         const rect = renderer.domElement.getBoundingClientRect();
@@ -336,6 +396,10 @@ export default function Viewer3D(p: Props) {
       const onPointerMove = (ev: MouseEvent) => {
         const s = sceneRef.current;
         if (!s) return;
+        if (stateRef.current.pickEnabled === false) {
+          renderer.domElement.style.cursor = 'grab';
+          return;
+        }
         const rect = renderer.domElement.getBoundingClientRect();
         ptr.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
         ptr.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
@@ -424,7 +488,7 @@ export default function Viewer3D(p: Props) {
     const gridObj = s.scene.getObjectByName('grid');
     if (gridObj) gridObj.visible = p.showGrid;
     const axesObj = s.scene.getObjectByName('axes');
-    if (axesObj) axesObj.visible = p.showAxes;
+    if (axesObj) axesObj.visible = Boolean(p.showAxes);
 
     if (s.struct) {
       s.struct.visible = p.visibleTypes['structure'] !== false;
@@ -520,9 +584,26 @@ export default function Viewer3D(p: Props) {
               <span>Fit View</span>
             </button>
             <div className="dock-separator" />
-            <div className="dock-meta" title="Camera View Heading">
-              <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', padding: '0 4px', letterSpacing: '0.04em' }}>
-                🧭 {azimuth} {azimuthDeg}°
+            <div className="dock-meta" title="Coordinate Orientation (X: Red, Y: Yellow, Z: Cyan)">
+              <span
+                className="mono"
+                style={{
+                  fontSize: 10.5,
+                  color: 'var(--text-faint)',
+                  padding: '0 4px',
+                  letterSpacing: '0.04em',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+                  <circle cx="12" cy="14" r="1.75" fill="#e5e7eb" />
+                  <line x1="12" y1="14" x2="22" y2="14" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" />
+                  <line x1="12" y1="14" x2="12" y2="3" stroke="#facc15" strokeWidth="2.5" strokeLinecap="round" />
+                  <line x1="12" y1="14" x2="4" y2="21" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+                <span>{azimuth} {azimuthDeg}°</span>
               </span>
             </div>
           </div>
