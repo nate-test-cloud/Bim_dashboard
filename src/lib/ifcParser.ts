@@ -1319,7 +1319,133 @@ export async function parseIfcWithWebIfc(
       }
     });
 
-    onProgress?.({ phase: 'Extracting building elements & property sets', fraction: 0.75 });
+    onProgress?.({ phase: 'Indexing properties & thermal metrics', fraction: 0.65 });
+    await tick();
+
+    // Fast Batch Property Extraction: avoids N*M recursive getPropertySets lookups (saving minutes/hangs)
+    const thermalValByPropId = new Map<number, number>();
+    const areaValByPropId = new Map<number, number>();
+    const singleValIDs = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCPROPERTYSINGLEVALUE, true);
+    const numSingleVals = singleValIDs.size();
+    for (let i = 0; i < numSingleVals; i++) {
+      const id = singleValIDs.get(i);
+      const line = ifcApi.GetLine(modelID, id, false);
+      const name = String(line?.Name?.value || '');
+      const val = line?.NominalValue?.value ?? line?.NominalValue?._representationValue;
+      if (typeof val === 'number') {
+        if (/thermal|uvalue|u_wert|transmittance/i.test(name) && val > 0 && val < 10) {
+          thermalValByPropId.set(id, val);
+        } else if (/area|flaeche|sidearea/i.test(name) && val > 0 && val < 100000) {
+          areaValByPropId.set(id, val);
+        }
+      }
+    }
+
+    const thermalByPsetId = new Map<number, number>();
+    const areaByPsetId = new Map<number, number>();
+    const psetIDs = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCPROPERTYSET, true);
+    const numPsets = psetIDs.size();
+    for (let i = 0; i < numPsets; i++) {
+      const psetId = psetIDs.get(i);
+      const pset = ifcApi.GetLine(modelID, psetId, false);
+      const props = pset?.HasProperties;
+      if (props && Array.isArray(props)) {
+        for (const p of props) {
+          const u = thermalValByPropId.get(p.value);
+          if (u !== undefined && !thermalByPsetId.has(psetId)) thermalByPsetId.set(psetId, u);
+          const a = areaValByPropId.get(p.value);
+          if (a !== undefined && !areaByPsetId.has(psetId)) areaByPsetId.set(psetId, a);
+        }
+      }
+    }
+
+    // Check Element Quantities
+    const qsetIDs = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCELEMENTQUANTITY, true);
+    const numQsets = qsetIDs.size();
+    for (let i = 0; i < numQsets; i++) {
+      const qsetId = qsetIDs.get(i);
+      const qset = ifcApi.GetLine(modelID, qsetId, false);
+      const quantities = qset?.Quantities;
+      if (quantities && Array.isArray(quantities)) {
+        for (const q of quantities) {
+          const qLine = ifcApi.GetLine(modelID, q.value, false);
+          const qName = String(qLine?.Name?.value || '');
+          const val = qLine?.AreaValue?.value ?? qLine?.NetAreaValue?.value ?? qLine?.GrossAreaValue?.value ?? qLine?.LengthValue?.value;
+          if (/area|sidearea|flaeche/i.test(qName) && typeof val === 'number' && val > 0 && val < 100000) {
+            areaByPsetId.set(qsetId, val);
+            break;
+          }
+        }
+      }
+    }
+
+    // Map occurrences defined directly by property sets (IFCRELDEFINESBYPROPERTIES)
+    const uValueByElem = new Map<number, number>();
+    const areaByElem = new Map<number, number>();
+    const relPropsIDs = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELDEFINESBYPROPERTIES, true);
+    const numRelProps = relPropsIDs.size();
+    for (let i = 0; i < numRelProps; i++) {
+      const rel = ifcApi.GetLine(modelID, relPropsIDs.get(i), false);
+      const psetId = rel?.RelatingPropertyDefinition?.value;
+      if (!psetId) continue;
+      const u = thermalByPsetId.get(psetId);
+      const a = areaByPsetId.get(psetId);
+      if (u !== undefined || a !== undefined) {
+        const related = rel.RelatedObjects;
+        if (Array.isArray(related)) {
+          for (const r of related) {
+            if (u !== undefined && !uValueByElem.has(r.value)) uValueByElem.set(r.value, u);
+            if (a !== undefined && !areaByElem.has(r.value)) areaByElem.set(r.value, a);
+          }
+        } else if (related) {
+          if (u !== undefined && !uValueByElem.has(related.value)) uValueByElem.set(related.value, u);
+          if (a !== undefined && !areaByElem.has(related.value)) areaByElem.set(related.value, a);
+        }
+      }
+    }
+
+    // Map types defined by property sets (IFCRELDEFINESBYTYPE)
+    const thermalByType = new Map<number, number | null>();
+    const areaByType = new Map<number, number | null>();
+    const typeRelIDs = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELDEFINESBYTYPE, true);
+    const numTypeRels = typeRelIDs.size();
+    for (let i = 0; i < numTypeRels; i++) {
+      const rel = ifcApi.GetLine(modelID, typeRelIDs.get(i), false);
+      const typeId = rel?.RelatingType?.value;
+      if (!typeId) continue;
+      let typeU = thermalByType.get(typeId);
+      let typeA = areaByType.get(typeId);
+      if (typeU === undefined || typeA === undefined) {
+        const typeObj = ifcApi.GetLine(modelID, typeId, false);
+        const psets = typeObj?.HasPropertySets;
+        if (psets && Array.isArray(psets)) {
+          for (const ps of psets) {
+            if (typeU === undefined) {
+              const u = thermalByPsetId.get(ps.value);
+              if (u !== undefined) typeU = u;
+            }
+            if (typeA === undefined) {
+              const a = areaByPsetId.get(ps.value);
+              if (a !== undefined) typeA = a;
+            }
+          }
+        }
+        thermalByType.set(typeId, typeU ?? null);
+        areaByType.set(typeId, typeA ?? null);
+      }
+      const related = rel.RelatedObjects;
+      if (Array.isArray(related)) {
+        for (const r of related) {
+          if (typeU && !uValueByElem.has(r.value)) uValueByElem.set(r.value, typeU);
+          if (typeA && !areaByElem.has(r.value)) areaByElem.set(r.value, typeA);
+        }
+      } else if (related) {
+        if (typeU && !uValueByElem.has(related.value)) uValueByElem.set(related.value, typeU);
+        if (typeA && !areaByElem.has(related.value)) areaByElem.set(related.value, typeA);
+      }
+    }
+
+    onProgress?.({ phase: 'Building spatial elements and geometry models', fraction: 0.85 });
     await tick();
 
     // Storeys
@@ -1339,8 +1465,20 @@ export async function parseIfcWithWebIfc(
     let uMissing = 0;
     let totalFloorArea = 0;
 
+    let processedCount = 0;
+    const totalMeshes = meshMap.size;
+
     for (const [expressID, geoms] of meshMap.entries()) {
-      const line = ifcApi.GetLine(modelID, expressID);
+      processedCount++;
+      if (processedCount % 5000 === 0) {
+        onProgress?.({
+          phase: `Building spatial elements (${processedCount}/${totalMeshes})`,
+          fraction: 0.85 + (0.12 * processedCount) / Math.max(1, totalMeshes),
+        });
+        await tick();
+      }
+
+      const line = ifcApi.GetLine(modelID, expressID, false);
       const typeCode = ifcApi.GetLineType(modelID, expressID);
       const typeName = (ifcApi.GetNameFromTypeCode(typeCode) || '').toUpperCase();
 
@@ -1387,35 +1525,9 @@ export async function parseIfcWithWebIfc(
       const name = line?.Name?.value || `${typeName} #${expressID}`;
       const globalId = line?.GlobalId?.value || String(expressID);
 
-      const psets = await ifcApi.properties.getPropertySets(modelID, expressID, true);
-      let uVal: number | undefined;
-      let areaM2: number | undefined;
+      const uVal = uValueByElem.get(expressID);
+      let areaM2 = areaByElem.get(expressID);
       let material: string | undefined;
-
-      for (const ps of psets) {
-        if (!ps) continue;
-        if (ps.HasProperties) {
-          for (const prop of ps.HasProperties) {
-            const pName = prop.Name?.value || '';
-            const val = prop.NominalValue?.value ?? prop.NominalValue?._representationValue;
-            if (/thermal|uvalue|u_wert|transmittance/i.test(pName) && typeof val === 'number' && val > 0 && val < 10) {
-              uVal = val;
-            }
-            if (/area|flaeche/i.test(pName) && typeof val === 'number' && val > 0 && val < 100000) {
-              if (!areaM2) areaM2 = val;
-            }
-          }
-        }
-        if (ps.Quantities) {
-          for (const q of ps.Quantities) {
-            const qName = q.Name?.value || '';
-            const val = q.AreaValue?.value ?? q.NetAreaValue?.value ?? q.GrossAreaValue?.value ?? q.LengthValue?.value;
-            if (/area|sidearea/i.test(qName) && typeof val === 'number' && val > 0) {
-              areaM2 = val;
-            }
-          }
-        }
-      }
 
       if (line?.ObjectType?.value && typeof line.ObjectType.value === 'string') {
         material = line.ObjectType.value;
@@ -1518,10 +1630,14 @@ export async function parseIfcBuffer(
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   try {
     return await parseIfcWithWebIfc(bytes, fileName, onProgress);
-  } catch {
-    // Fall back to text parser for test strings or incomplete STEP mock snippets
-    const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-    return await parseIfcTextInternal(text, fileName, onProgress);
+  } catch (err) {
+    // Only fall back to regex text parser for small snippets/test files (< 25MB).
+    // Large models must not fall back to regex character scans which cause OOM and CPU thrashing.
+    if (bytes.length < 25 * 1024 * 1024) {
+      const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      return await parseIfcTextInternal(text, fileName, onProgress);
+    }
+    throw err;
   }
 }
 
@@ -1535,8 +1651,8 @@ export async function parseIfcText(
     try {
       const bytes = new TextEncoder().encode(text);
       return await parseIfcWithWebIfc(bytes, fileName, onProgress);
-    } catch {
-      // Fall through to text internal parser
+    } catch (err) {
+      if (text.length > 25 * 1024 * 1024) throw err;
     }
   }
   return await parseIfcTextInternal(text, fileName, onProgress);

@@ -134,10 +134,16 @@ export function unpackMeshGeometry(mg: any): MeshGeometryData {
 
 export function packModel(model: BuildingModel): any {
   if (!model || !Array.isArray(model.elements)) return model;
+  // If model is very large (> 2000 elements), omit raw binary meshes from the dev-server JSON cache
+  // to avoid V8 max string length limits (>512MB) and garbage collector thrashing.
+  const isMassive = model.elements.length > 2000;
   return {
     ...model,
     elements: model.elements.map((el) => {
-      if (!el.meshGeometries || !Array.isArray(el.meshGeometries)) return el;
+      if (isMassive || !el.meshGeometries || !Array.isArray(el.meshGeometries)) {
+        const { meshGeometries: _, ...rest } = el;
+        return rest;
+      }
       return {
         ...el,
         meshGeometries: el.meshGeometries.map(packMeshGeometry),

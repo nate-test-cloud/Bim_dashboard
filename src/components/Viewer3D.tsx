@@ -278,34 +278,48 @@ export default function Viewer3D(p: Props) {
         meshes.set('tower-core', core);
       } else if (model.elements.some((el) => el.meshGeometries && el.meshGeometries.length > 0)) {
         // High-Fidelity Real BIM Geometry from Web-IFC Engine
+        const totalElements = model.elements.length;
+        const isMassive = totalElements > 2000;
+
+        // Shared materials by category to avoid tens of thousands of duplicate material allocations & uniform updates
+        const sharedMaterials: Record<string, THREE.Material> = {
+          window: new THREE.MeshPhysicalMaterial({
+            color: COLORS.window,
+            transparent: true,
+            opacity: 0.65,
+            roughness: 0.08,
+            transmission: 0.75,
+            metalness: 0.1,
+            wireframe: stateRef.current.wireframe,
+            side: THREE.DoubleSide,
+            emissive: new THREE.Color(0x000000),
+          }),
+        };
+
+        const getBaseMaterial = (cat: string) => {
+          if (cat === 'window') return sharedMaterials.window;
+          if (!sharedMaterials[cat]) {
+            sharedMaterials[cat] = new THREE.MeshStandardMaterial({
+              color: COLORS[cat] ?? COLORS.other,
+              transparent: false,
+              opacity: 1,
+              roughness: cat === 'wall' ? 0.4 : 0.5,
+              metalness: 0.04,
+              wireframe: stateRef.current.wireframe,
+              side: THREE.DoubleSide,
+              emissive: new THREE.Color(0x000000),
+            });
+          }
+          return sharedMaterials[cat];
+        };
+
         for (const el of model.elements) {
           if (!el.meshGeometries || el.meshGeometries.length === 0) continue;
           const isGlass = el.category === 'window';
           const elGroup = new THREE.Group();
           elGroup.userData.eid = el.id;
 
-          const baseMat = isGlass
-            ? new THREE.MeshPhysicalMaterial({
-                color: COLORS.window,
-                transparent: true,
-                opacity: 0.65,
-                roughness: 0.08,
-                transmission: 0.75,
-                metalness: 0.1,
-                wireframe: stateRef.current.wireframe,
-                side: THREE.DoubleSide,
-                emissive: new THREE.Color(0x000000),
-              })
-            : new THREE.MeshStandardMaterial({
-                color: COLORS[el.category] ?? COLORS.other,
-                transparent: false,
-                opacity: 1,
-                roughness: el.category === 'wall' ? 0.4 : 0.5,
-                metalness: 0.04,
-                wireframe: stateRef.current.wireframe,
-                side: THREE.DoubleSide,
-                emissive: new THREE.Color(0x000000),
-              });
+          const baseMat = getBaseMaterial(el.category);
 
           for (const rawMg of el.meshGeometries) {
             const mg = unpackMeshGeometry(rawMg);
@@ -315,20 +329,23 @@ export default function Viewer3D(p: Props) {
             geo.setAttribute('normal', new THREE.BufferAttribute(mg.normals, 3));
             geo.setIndex(new THREE.BufferAttribute(mg.indices, 1));
 
-            const mesh = new THREE.Mesh(geo, baseMat.clone());
-            mesh.castShadow = !isGlass;
-            mesh.receiveShadow = true;
+            // Use shared material on massive models to allow Three.js render batching
+            const mesh = new THREE.Mesh(geo, isMassive ? baseMat : baseMat.clone());
+            mesh.castShadow = !isGlass && !isMassive;
+            mesh.receiveShadow = !isMassive;
             mesh.userData.eid = el.id;
 
-            // Clean architectural silhouette contour edges
-            const edgesGeo = new THREE.EdgesGeometry(geo, 28);
-            const edgesMat = new THREE.LineBasicMaterial({
-              color: isGlass ? 0x94a3b8 : 0x475569,
-              transparent: true,
-              opacity: isGlass ? 0.45 : 0.55,
-            });
-            const edges = new THREE.LineSegments(edgesGeo, edgesMat);
-            mesh.add(edges);
+            // Clean architectural silhouette contour edges (only for models <= 2000 elements to avoid GPU/CPU freeze)
+            if (!isMassive) {
+              const edgesGeo = new THREE.EdgesGeometry(geo, 28);
+              const edgesMat = new THREE.LineBasicMaterial({
+                color: isGlass ? 0x94a3b8 : 0x475569,
+                transparent: true,
+                opacity: isGlass ? 0.45 : 0.55,
+              });
+              const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+              mesh.add(edges);
+            }
 
             elGroup.add(mesh);
           }
@@ -456,7 +473,8 @@ export default function Viewer3D(p: Props) {
       };
       renderer.domElement.addEventListener('click', onClick);
 
-      // Hover feedback cursor
+      // Hover feedback cursor with throttling to avoid CPU thrashing on millions of triangles
+      let lastMoveTime = 0;
       const onPointerMove = (ev: MouseEvent) => {
         const s = sceneRef.current;
         if (!s) return;
@@ -464,6 +482,9 @@ export default function Viewer3D(p: Props) {
           renderer.domElement.style.cursor = 'grab';
           return;
         }
+        const now = performance.now();
+        if (now - lastMoveTime < 60) return;
+        lastMoveTime = now;
         const rect = renderer.domElement.getBoundingClientRect();
         ptr.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
         ptr.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;

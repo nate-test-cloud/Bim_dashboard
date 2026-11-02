@@ -53,6 +53,8 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 export async function idbSet(key: string, value: Blob | string): Promise<void> {
+  // Guard against giant files (> 150MB) exhausting browser IndexedDB quotas and thrashing disk
+  if (value instanceof Blob && value.size > 150 * 1024 * 1024) return;
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('models', 'readwrite');
