@@ -13,7 +13,7 @@ dist-ssr
 *.local
 
 #models
-/models/
+models/
 public/models/
 
 # Editor directories and files
@@ -32,3 +32,4 @@ tmp/
 *.jpg
 !public/*.png
 !Minimalist BIM Sustainability Logo.png
+.agents/

@@ -921,6 +921,25 @@ async function parseIfcTextInternal(
       cat = 'window';
     }
 
+    // Reclassify roof slabs (PredefinedType ROOF or name indicating roof/cubierta/chapa grecada) to 'roof'
+    if (
+      cat === 'floor' &&
+      e.type === 'IFCSLAB' &&
+      (/ROOF|DACH|CUBIERTA|TEJADO|TECHO|AZOTEA|CHAPA\s*GRECADA|DECK/i.test(name) ||
+        /ROOF/i.test(strVal(a[8] ?? '')))
+    ) {
+      cat = 'roof';
+    }
+
+    // Reclassify conceptual massing (Revit In-Place Mass / Mass Floors) to 'mass' so it is hidden by default
+    const isMass =
+      /^MASS(\s|:|_|\b)/i.test(name) ||
+      /CONCEPTUAL\s*MASS|MASSING|DEFAULT\s*MASS\s*FLOOR/i.test(name) ||
+      (info?.materials ?? []).some((m) => /default\s*form|mass/i.test(m));
+    if (isMass) {
+      cat = 'mass';
+    }
+
     // ---- world-space geometry (oriented box when single extrusion, else AABB) ----
     let worldBox: Box | null = null;
     const placeId = refId(a[5] ?? '');
@@ -1156,13 +1175,13 @@ async function getIfcApi(): Promise<WebIFC.IfcAPI> {
   if (!apiInitPromise) {
     apiInitPromise = (async () => {
       const api = new WebIFC.IfcAPI();
-      api.SetLogLevel(WebIFC.LogLevel.LOG_LEVEL_ERROR);
       await api.Init((path: string) => {
         if (typeof window !== 'undefined') {
           return `/wasm/${path}`;
         }
         return path;
       });
+      api.SetLogLevel(WebIFC.LogLevel.LOG_LEVEL_ERROR);
       ifcApiSingleton = api;
       return api;
     })();
@@ -1333,7 +1352,10 @@ export async function parseIfcWithWebIfc(
       else if (/SLAB/i.test(typeName)) {
         const pType = String(line?.PredefinedType?.value || '').toUpperCase();
         const nameUpper = String(line?.Name?.value || '').toUpperCase();
-        if (pType === 'ROOF' || /DACH|ROOF/i.test(nameUpper)) {
+        if (
+          pType === 'ROOF' ||
+          /ROOF|DACH|CUBIERTA|TEJADO|TECHO|AZOTEA|CHAPA\s*GRECADA|DECK/i.test(nameUpper)
+        ) {
           cat = 'roof';
         } else {
           cat = 'floor';
@@ -1348,6 +1370,18 @@ export async function parseIfcWithWebIfc(
         if (/GLASS|VIDRIO|CRISTAL|GLAZ|PANEL/i.test(nameUpper)) {
           cat = 'window';
         }
+      }
+
+      // Reclassify conceptual massing (Revit In-Place Mass / Mass Floors / Helper proxies) to 'mass'
+      const rawName = String(line?.Name?.value || '');
+      const rawObjType = String(line?.ObjectType?.value || '');
+      if (
+        /^MASS(\s|:|_|\b)/i.test(rawName) ||
+        /^MASS(\s|:|_|\b)/i.test(rawObjType) ||
+        /CONCEPTUAL\s*MASS|MASSING|DEFAULT\s*MASS\s*FLOOR/i.test(rawName) ||
+        /CONCEPTUAL\s*MASS|MASSING/i.test(rawObjType)
+      ) {
+        cat = 'mass';
       }
 
       const name = line?.Name?.value || `${typeName} #${expressID}`;

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { BuildingModel } from '../lib/types';
+import { unpackMeshGeometry } from '../lib/modelCache';
 
 interface Props {
   model: BuildingModel;
@@ -9,6 +10,7 @@ interface Props {
   showGrid: boolean;
   showAxes?: boolean;
   visibleTypes: Record<string, boolean>;
+  hiddenElementIds?: Record<string, boolean>;
   selectedId: string | null;
   onSelect: (id: string | null, info?: string) => void;
   autoRotate: boolean;
@@ -19,15 +21,16 @@ interface Props {
   onToggleAxes?: () => void;
 }
 
-// Professional Blender / Rhino CAD Architectural Palette (Zero Blue Slop)
+// Architectural Monochromatic Grey Studio Palette (Distinctly greyish, never washed-out white, never black)
 const COLORS: Record<string, number> = {
-  wall: 0xdfd9d2,      // Matte architectural limestone / warm concrete
-  window: 0x82919e,    // Smoked architectural reflective glazing
-  door: 0xb87333,      // Architectural bronze / timber
-  roof: 0x38393d,      // Neutral dark charcoal / asphalt gravel roof (no blue cast)
-  floor: 0x666b74,     // Structural slab concrete
-  structure: 0xea7600, // Blender CAD structural accent
-  other: 0x9096a0,     // Neutral auxiliary spatial element
+  wall: 0xc5c9d1,      // Solid architectural limestone / concrete grey
+  window: 0x9fb0c3,    // Reflective smoked architectural glass
+  door: 0xa8a49c,      // Warm medium stone / timber grey
+  roof: 0x8a919e,      // Mid slate grey
+  floor: 0xa4aab6,     // Structural concrete slab grey
+  structure: 0x787f8d, // Solid architectural graphite steel grey (distinctly grey, never black)
+  mass: 0x989fae,      // Clean medium conceptual grey
+  other: 0xa2a8b5,     // Neutral auxiliary spatial grey
 };
 
 interface SceneRefs {
@@ -135,7 +138,7 @@ export default function Viewer3D(p: Props) {
       renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMapping = THREE.NeutralToneMapping;
       renderer.toneMappingExposure = 1.05;
 
       mount.appendChild(renderer.domElement);
@@ -145,22 +148,22 @@ export default function Viewer3D(p: Props) {
       controls.autoRotate = stateRef.current.autoRotate;
       controls.autoRotateSpeed = 0.75;
 
-      // Studio architectural lighting
-      const ambient = new THREE.AmbientLight(0x454b56, 1.25);
+      // Studio architectural lighting tuned for rich greyish tones
+      const ambient = new THREE.AmbientLight(0x646a76, 1.35);
       scene.add(ambient);
 
-      const hemiLight = new THREE.HemisphereLight(0xe8eaed, 0x1a1c20, 0.95);
+      const hemiLight = new THREE.HemisphereLight(0xdde1e7, 0x555c68, 1.0);
       hemiLight.position.set(0, 50, 0);
       scene.add(hemiLight);
 
-      const sun = new THREE.DirectionalLight(0xfffbf2, 1.75);
+      const sun = new THREE.DirectionalLight(0xfffdfa, 1.45);
       sun.position.set(45, 65, 35);
       sun.castShadow = true;
       sun.shadow.mapSize.width = 1024;
       sun.shadow.mapSize.height = 1024;
       scene.add(sun);
 
-      const fillLight = new THREE.DirectionalLight(0xe5e7eb, 0.45);
+      const fillLight = new THREE.DirectionalLight(0xdfe3ea, 0.65);
       fillLight.position.set(-30, 20, -30);
       scene.add(fillLight);
 
@@ -297,14 +300,16 @@ export default function Viewer3D(p: Props) {
                 color: COLORS[el.category] ?? COLORS.other,
                 transparent: false,
                 opacity: 1,
-                roughness: el.category === 'wall' ? 0.35 : el.category === 'roof' ? 0.5 : 0.45,
-                metalness: el.category === 'roof' ? 0.2 : 0.08,
+                roughness: el.category === 'wall' ? 0.4 : 0.5,
+                metalness: 0.04,
                 wireframe: stateRef.current.wireframe,
                 side: THREE.DoubleSide,
                 emissive: new THREE.Color(0x000000),
               });
 
-          for (const mg of el.meshGeometries) {
+          for (const rawMg of el.meshGeometries) {
+            const mg = unpackMeshGeometry(rawMg);
+            if (mg.positions.length === 0) continue;
             const geo = new THREE.BufferGeometry();
             geo.setAttribute('position', new THREE.BufferAttribute(mg.positions, 3));
             geo.setAttribute('normal', new THREE.BufferAttribute(mg.normals, 3));
@@ -315,12 +320,12 @@ export default function Viewer3D(p: Props) {
             mesh.receiveShadow = true;
             mesh.userData.eid = el.id;
 
-            // Sharp CAD architectural silhouette contour edges
+            // Clean architectural silhouette contour edges
             const edgesGeo = new THREE.EdgesGeometry(geo, 28);
             const edgesMat = new THREE.LineBasicMaterial({
-              color: isGlass ? 0x94a3b8 : 0x181a1e,
+              color: isGlass ? 0x94a3b8 : 0x475569,
               transparent: true,
-              opacity: isGlass ? 0.45 : 0.75,
+              opacity: isGlass ? 0.45 : 0.55,
             });
             const edges = new THREE.LineSegments(edgesGeo, edgesMat);
             mesh.add(edges);
@@ -328,7 +333,8 @@ export default function Viewer3D(p: Props) {
             elGroup.add(mesh);
           }
 
-          elGroup.visible = stateRef.current.visibleTypes[el.category] !== false;
+          const isElHidden = Boolean(stateRef.current.hiddenElementIds?.[el.id]);
+          elGroup.visible = !isElHidden && stateRef.current.visibleTypes[el.category] !== false;
           scene.add(elGroup);
           meshes.set(el.id, elGroup as unknown as THREE.Mesh);
         }
@@ -339,8 +345,8 @@ export default function Viewer3D(p: Props) {
           const geo = new THREE.BoxGeometry(1, 1, 1);
           const mat = new THREE.MeshStandardMaterial({
             color: 0xffffff,
-            metalness: 0.6,
-            roughness: 0.4,
+            metalness: 0.04,
+            roughness: 0.45,
             wireframe: stateRef.current.wireframe,
           });
           struct = new THREE.InstancedMesh(geo, mat, structEls.length);
@@ -388,8 +394,8 @@ export default function Viewer3D(p: Props) {
                 color: COLORS[el.category] ?? COLORS.other,
                 transparent: false,
                 opacity: 1,
-                metalness: el.category === 'roof' ? 0.2 : 0.08,
-                roughness: el.category === 'wall' ? 0.35 : 0.5,
+                metalness: 0.04,
+                roughness: el.category === 'wall' ? 0.4 : 0.5,
                 wireframe: stateRef.current.wireframe,
                 emissive: new THREE.Color(0x000000),
               });
@@ -398,14 +404,15 @@ export default function Viewer3D(p: Props) {
           mesh.position.set(c.x, c.y, c.z);
           if (el.rotation) mesh.quaternion.set(el.rotation[0], el.rotation[1], el.rotation[2], el.rotation[3]);
           mesh.userData.eid = el.id;
-          mesh.visible = stateRef.current.visibleTypes[el.category] !== false;
+          const isElHidden = Boolean(stateRef.current.hiddenElementIds?.[el.id]);
+          mesh.visible = !isElHidden && stateRef.current.visibleTypes[el.category] !== false;
 
           // Crisp CAD profile edges (Forma / Revit aesthetic)
           const edgesGeo = new THREE.EdgesGeometry(geo);
           const edgesMat = new THREE.LineBasicMaterial({
-            color: isGlass ? 0x94a3b8 : 0x1e2024,
+            color: isGlass ? 0x94a3b8 : 0x475569,
             transparent: true,
-            opacity: isGlass ? 0.6 : 0.75,
+            opacity: isGlass ? 0.6 : 0.55,
           });
           const edges = new THREE.LineSegments(edgesGeo, edgesMat);
           mesh.add(edges);
@@ -594,7 +601,8 @@ export default function Viewer3D(p: Props) {
     s.meshes.forEach((obj, eid) => {
       const el = p.model.elements.find((e) => e.id === eid);
       const cat = el?.category ?? 'other';
-      obj.visible = p.visibleTypes[cat] !== false;
+      const isElHidden = Boolean(p.hiddenElementIds?.[eid]);
+      obj.visible = !isElHidden && p.visibleTypes[cat] !== false;
       obj.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           const m = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
@@ -602,7 +610,7 @@ export default function Viewer3D(p: Props) {
         }
       });
     });
-  }, [p.wireframe, p.showGrid, p.showAxes, p.visibleTypes, p.selectedId, p.autoRotate, p.model]);
+  }, [p.wireframe, p.showGrid, p.showAxes, p.visibleTypes, p.hiddenElementIds, p.selectedId, p.autoRotate, p.model]);
 
   return (
     <div className="viewer-container">

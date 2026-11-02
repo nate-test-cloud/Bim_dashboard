@@ -13,6 +13,7 @@ import { parseClimateCsv, SAMPLE_CLIMATE_CSV, type ClimateTable } from './lib/cl
 import { exportPdf, toCsv, toJson, downloadText, type ExportBundle } from './lib/exports';
 import { parseIfcBuffer, validateIfcFile } from './lib/ifcParser';
 import { loadProject, saveProject, idbSet } from './lib/persistence';
+import { loadServerCache, saveServerCache } from './lib/modelCache';
 import { CLIMATE_PRESETS, sampleBuilding } from './lib/sampleBuilding';
 import {
   fetchSiteClimateData,
@@ -259,8 +260,9 @@ export default function App() {
   const [autoRotate, setAutoRotate] = useState(false);
   const [pickEnabled, setPickEnabled] = useState(true);
   const [visibleTypes, setVisibleTypes] = useState<Record<string, boolean>>({
-    wall: true, window: true, door: true, roof: true, floor: true, structure: true, other: true, tower: true,
+    wall: true, window: true, door: true, roof: true, floor: true, structure: true, mass: false, other: true, tower: true,
   });
+  const [hiddenElementIds, setHiddenElementIds] = useState<Record<string, boolean>>({});
   // dialogs
   const [dlg, setDlg] = useState<null | 'bim' | 'climate' | 'help' | 'settings' | 'plugins'>(null);
   const [tab, setTab] = useState<'charts' | 'scenarios' | 'sustain' | 'data'>('charts');
@@ -275,26 +277,76 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const climateInputRef = useRef<HTMLInputElement>(null);
 
-  // restore persisted project once
+  // restore persisted project once (checks in-memory server session first, then local storage)
   useEffect(() => {
-    const saved = loadProject();
-    if (saved) {
-      try {
-        setProjectName(saved.projectName as string);
-        setEnv(saved.env as EnvInputs);
-        setDesign(saved.design as DesignInputs);
-        setScenarios(saved.scenarios as Scenario[]);
-        if (saved.modelMeta) {
-          setModel(saved.modelMeta as BuildingModel);
-          setModelStatus('Restored saved project model (local)');
+    let active = true;
+    async function restoreSession() {
+      // 1. Check server-side workstation session cache (instant recovery of parsed models across refresh)
+      const cached = await loadServerCache();
+      if (!active) return;
+      if (cached && (cached.model || cached.design)) {
+        if (cached.model) {
+          setModel(cached.model);
+          setModelStatus(cached.modelStatus || `Loaded ${cached.model.name} (${cached.model.elements.length} elements)`);
         }
-        setNotice({ kind: 'ok', text: `Restored locally saved project from ${saved.savedAt}.` });
-      } catch {
-        /* ignore corrupt save */
+        if (cached.projectName) setProjectName(cached.projectName);
+        if (cached.env) setEnv(cached.env);
+        if (cached.design) setDesign(cached.design);
+        if (cached.scenarios) setScenarios(cached.scenarios);
+        if (cached.baselineId !== undefined) setBaselineId(cached.baselineId);
+        if (cached.siteLocation) setSiteLocation(cached.siteLocation);
+        if (cached.siteClimate) setSiteClimate(cached.siteClimate);
+        setNotice({
+          kind: 'ok',
+          text: `Restored parsed model "${cached.model?.name || cached.projectName}" from active workstation server session.`,
+        });
+        return;
+      }
+
+      // 2. Fallback to localStorage save if no active server session model
+      const saved = loadProject();
+      if (!active) return;
+      if (saved) {
+        try {
+          setProjectName(saved.projectName as string);
+          setEnv(saved.env as EnvInputs);
+          setDesign(saved.design as DesignInputs);
+          setScenarios(saved.scenarios as Scenario[]);
+          if (saved.modelMeta) {
+            setModel(saved.modelMeta as BuildingModel);
+            setModelStatus('Restored saved project model (local)');
+          }
+          setNotice({ kind: 'ok', text: `Restored locally saved project from ${saved.savedAt}.` });
+        } catch {
+          /* ignore corrupt save */
+        }
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    restoreSession();
+    return () => { active = false; };
   }, []);
+
+  // Sync state modifications to server session cache (debounced)
+  const isInitialMount = useRef(true);
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      saveServerCache({
+        projectName,
+        env,
+        design,
+        scenarios,
+        baselineId,
+        siteLocation,
+        siteClimate,
+        modelStatus,
+      });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [projectName, env, design, scenarios, baselineId, siteLocation, siteClimate, modelStatus]);
 
   // Global CAD Hotkeys (B: Pick/Deselect, Z: Wireframe, G: Grid, Space: Turntable, Esc: Deselect)
   useEffect(() => {
@@ -677,10 +729,22 @@ export default function App() {
           geometryFidelity: 'approximate',
         };
         setModel(m);
-        setDesign((d) => ({ ...designFromModel(m), euiTargetKwhM2Yr: d.euiTargetKwhM2Yr, carbonFactorKgPerKwh: d.carbonFactorKgPerKwh, equivHeatingHours: d.equivHeatingHours, equivCoolingHours: d.equivCoolingHours }));
-        setModelStatus(`JSON model loaded (${m.elements.length} elements)`);
+        const nextDesign = { ...designFromModel(m), euiTargetKwhM2Yr: design.euiTargetKwhM2Yr, carbonFactorKgPerKwh: design.carbonFactorKgPerKwh, equivHeatingHours: design.equivHeatingHours, equivCoolingHours: design.equivCoolingHours };
+        setDesign(nextDesign);
+        const statusStr = `JSON model loaded (${m.elements.length} elements)`;
+        setModelStatus(statusStr);
         log(`Loaded ${m.elements.length} elements from normalized JSON.`);
         setNotice({ kind: 'ok', text: `Normalized JSON model "${m.name}" loaded.` });
+        saveServerCache({
+          model: m,
+          design: nextDesign,
+          env,
+          scenarios,
+          projectName: m.name,
+          modelStatus: statusStr,
+          siteLocation,
+          siteClimate,
+        });
         try { await idbSet('last-model', file); } catch { /* non-fatal */ }
       } catch (e) {
         log(`ERROR: ${e instanceof Error ? e.message : e}`);
@@ -712,11 +776,23 @@ export default function App() {
       if (cancelRef.current) { log('Cancelled by user.'); return; }
       for (const w of parsed.warnings) log(`WARN: ${w}`);
       setModel(parsed);
-      setDesign((d) => ({ ...designFromModel(parsed), euiTargetKwhM2Yr: d.euiTargetKwhM2Yr, carbonFactorKgPerKwh: d.carbonFactorKgPerKwh, equivHeatingHours: d.equivHeatingHours, equivCoolingHours: d.equivCoolingHours }));
+      const nextDesign = { ...designFromModel(parsed), euiTargetKwhM2Yr: design.euiTargetKwhM2Yr, carbonFactorKgPerKwh: design.carbonFactorKgPerKwh, equivHeatingHours: design.equivHeatingHours, equivCoolingHours: design.equivCoolingHours };
+      setDesign(nextDesign);
       setSelectedId(null);
-      setModelStatus(`IFC loaded (${parsed.elements.length} elements)`);
+      const statusStr = `IFC loaded (${parsed.elements.length} elements)`;
+      setModelStatus(statusStr);
       setNotice({ kind: 'ok', text: `IFC model "${parsed.name}" imported — viewer now shows the imported elements.` });
       setImportProgress(100);
+      saveServerCache({
+        model: parsed,
+        design: nextDesign,
+        env,
+        scenarios,
+        projectName: parsed.name,
+        modelStatus: statusStr,
+        siteLocation,
+        siteClimate,
+      });
       try { await idbSet('last-model', file); } catch { /* non-fatal */ }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -781,8 +857,19 @@ export default function App() {
   });
 
   const persist = () => {
+    saveServerCache({
+      model,
+      projectName,
+      env,
+      design,
+      scenarios,
+      baselineId,
+      siteLocation,
+      siteClimate,
+      modelStatus,
+    });
     saveProject({ projectName, env, design, scenarios, modelMeta: model, euiTarget: design.euiTargetKwhM2Yr });
-    setNotice({ kind: 'ok', text: 'Project saved locally (browser localStorage; model file blob in IndexedDB). Not a server save.' });
+    setNotice({ kind: 'ok', text: 'Project saved to active workstation server session.' });
   };
 
   // ---------- small render helpers (stable component types live at module level) ----------
@@ -960,6 +1047,7 @@ export default function App() {
             wireframe={wireframe}
             showGrid={showGrid}
             visibleTypes={visibleTypes}
+            hiddenElementIds={hiddenElementIds}
             selectedId={selectedId}
             onSelect={(id) => setSelectedId(id)}
             autoRotate={autoRotate}
@@ -1527,7 +1615,19 @@ export default function App() {
                     <span style={{ fontSize: 13 }}>🗂</span>
                     <span className="outliner-title">Scene Collection</span>
                   </div>
-                  <span className="outliner-count">{model.elements.length} items</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {Object.values(hiddenElementIds).some(Boolean) && (
+                      <button
+                        className="btn-status-pill"
+                        style={{ fontSize: 10, padding: '1px 6px', background: 'rgba(234, 118, 0, 0.15)', color: '#ea7600', border: '1px solid rgba(234, 118, 0, 0.35)', cursor: 'pointer', borderRadius: '4px' }}
+                        title="Unhide all hidden elements"
+                        onClick={() => setHiddenElementIds({})}
+                      >
+                        Reset ({Object.values(hiddenElementIds).filter(Boolean).length} hidden)
+                      </button>
+                    )}
+                    <span className="outliner-count">{model.elements.length} items</span>
+                  </div>
                 </div>
 
                 <div className="outliner-filter-wrap">
@@ -1543,6 +1643,31 @@ export default function App() {
                   )}
                 </div>
 
+                <div className="outliner-layers-bar">
+                  {[
+                    { key: 'wall', label: 'Walls', icon: '🧱' },
+                    { key: 'window', label: 'Glazing', icon: '🪟' },
+                    { key: 'structure', label: 'Structure', icon: '🏗' },
+                    { key: 'floor', label: 'Floors', icon: '📐' },
+                    { key: 'roof', label: 'Roofs', icon: '🏠' },
+                    { key: 'mass', label: 'Mass', icon: '📦' },
+                  ].map((cat) => {
+                    const isVis = visibleTypes[cat.key] !== false;
+                    return (
+                      <button
+                        key={cat.key}
+                        type="button"
+                        className={`outliner-layer-pill ${isVis ? 'active' : 'dimmed'}`}
+                        title={`Click to ${isVis ? 'hide' : 'show'} ${cat.label}`}
+                        onClick={() => setVisibleTypes((v) => ({ ...v, [cat.key]: !isVis }))}
+                      >
+                        <span className="outliner-layer-pill-eye">{isVis ? '👁' : 'Ø'}</span>
+                        <span>{cat.icon} {cat.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <div className="blender-outliner-tree">
                   {/* Root Collection: Project Building Model */}
                   <div className="outliner-item collection-root">
@@ -1555,8 +1680,7 @@ export default function App() {
                   {/* Grouped Collections (Storeys / Levels) */}
                   {groupedElements.map(([storeyName, elements]) => {
                     const isCollapsed = !!collapsedStoreys[storeyName];
-                    const firstCat = elements[0]?.category;
-                    const allCatVisible = firstCat ? visibleTypes[firstCat] !== false : true;
+                    const allInStoreyVisible = elements.every((e) => !hiddenElementIds[e.id] && visibleTypes[e.category] !== false);
 
                     return (
                       <div key={storeyName} className="outliner-collection-group">
@@ -1569,16 +1693,22 @@ export default function App() {
                           <span className="outliner-name">{storeyName}</span>
                           <span className="outliner-count-pill">{elements.length}</span>
                           <button
-                            className={`outliner-eye-btn ${allCatVisible ? 'active' : 'dim'}`}
-                            title="Toggle layer visibility"
+                            className={`outliner-eye-btn ${allInStoreyVisible ? 'active' : 'dim'}`}
+                            title={`Toggle all ${elements.length} elements in ${storeyName}`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (firstCat) {
-                                setVisibleTypes((v) => ({ ...v, [firstCat]: !v[firstCat] }));
-                              }
+                              const willHide = allInStoreyVisible;
+                              setHiddenElementIds((prev) => {
+                                const next = { ...prev };
+                                for (const el of elements) {
+                                  if (willHide) next[el.id] = true;
+                                  else delete next[el.id];
+                                }
+                                return next;
+                              });
                             }}
                           >
-                            👁
+                            {allInStoreyVisible ? '👁' : 'Ø'}
                           </button>
                         </div>
 
@@ -1587,33 +1717,45 @@ export default function App() {
                           <div className="outliner-children">
                             {elements.slice(0, 150).map((e) => {
                               const isSelected = selectedId === e.id;
+                              const isElHidden = Boolean(hiddenElementIds[e.id]);
                               const isCatVisible = visibleTypes[e.category] !== false;
+                              const isVisible = !isElHidden && isCatVisible;
                               const catIcon =
                                 e.category === 'wall' ? '🧱' :
                                 e.category === 'window' ? '🪟' :
                                 e.category === 'roof' ? '🏠' :
-                                e.category === 'floor' ? '📐' : '🏗';
+                                e.category === 'floor' ? '📐' :
+                                e.category === 'mass' ? '📦' :
+                                e.category === 'structure' ? '🏗' : '🧩';
 
                               return (
                                 <div
                                   key={e.id}
-                                  className={`outliner-item element-row ${isSelected ? 'active' : ''}`}
+                                  className={`outliner-item element-row ${isSelected ? 'active' : ''} ${!isVisible ? 'dim' : ''}`}
                                   onClick={() => setSelectedId(e.id)}
                                 >
                                   <span className="outliner-elem-icon">{catIcon}</span>
                                   <div className="outliner-elem-info">
-                                    <span className="outliner-elem-name">{e.name}</span>
+                                    <span className="outliner-elem-name" style={{ opacity: isVisible ? 1 : 0.4 }}>{e.name}</span>
                                     <span className="outliner-elem-meta">{e.areaM2} m² {e.uValueWm2K ? `· U ${e.uValueWm2K}` : ''}</span>
                                   </div>
                                   <button
-                                    className={`outliner-eye-btn ${isCatVisible ? 'active' : 'dim'}`}
-                                    title={`Toggle ${e.category} visibility`}
+                                    className={`outliner-eye-btn ${isVisible ? 'active' : 'dim'}`}
+                                    title={`${isVisible ? 'Hide' : 'Unhide'} ${e.name} (${e.id})`}
                                     onClick={(eEvt) => {
                                       eEvt.stopPropagation();
-                                      setVisibleTypes((v) => ({ ...v, [e.category]: !v[e.category] }));
+                                      setHiddenElementIds((prev) => {
+                                        const next = { ...prev };
+                                        if (isElHidden) {
+                                          delete next[e.id];
+                                        } else {
+                                          next[e.id] = true;
+                                        }
+                                        return next;
+                                      });
                                     }}
                                   >
-                                    👁
+                                    {isVisible ? '👁' : 'Ø'}
                                   </button>
                                 </div>
                               );

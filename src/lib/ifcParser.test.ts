@@ -135,4 +135,43 @@ END-ISO-10303-21;`;
     const s = m.elements.find((e) => e.name === 'Mullion M')!;
     expect(s?.category).toBe('structure');
   });
+
+  it('reclassifies conceptual mass proxies and mass floors as mass category', async () => {
+    const t = `ISO-10303-21;
+HEADER;FILE_SCHEMA(('IFC2X3'));ENDSEC;
+DATA;
+#1=IFCPROJECT('p',$,'Project',$,$,$,$,$,$);
+#2=IFCBUILDINGELEMENTPROXY('proxy1',$,'Mass 1:Mass 1:1670535',$,$,$,$,$);
+#3=IFCSLAB('slab1',$,'Mass 1:L1:1670541',$,$,$,$,$,.FLOOR.);
+#4=IFCWALL('w1',$,'Standard Wall',$,$,$,$,$,$);
+ENDSEC;
+END-ISO-10303-21;`;
+    const m = await parseIfcText(t, 'mass-test.ifc');
+    const proxy = m.elements.find((e) => e.name.includes('Mass 1:Mass 1'));
+    const massFloor = m.elements.find((e) => e.name.includes('Mass 1:L1'));
+    const wall = m.elements.find((e) => e.name === 'Standard Wall');
+    expect(proxy?.category).toBe('mass');
+    expect(massFloor?.category).toBe('mass');
+    expect(wall?.category).toBe('wall');
+  });
+
+  it('correctly classifies multilingual roof slabs (cubierta, chapa grecada, dach) as roof', async () => {
+    const t = `ISO-10303-21;
+HEADER;FILE_SCHEMA(('IFC2X3'));ENDSEC;
+DATA;
+#1=IFCPROJECT('p',$,'Project',$,$,$,$,$,$);
+#2=IFCSLAB('s1',$,'Floor:Hormigón 160 mm con chapa grecada 50 mm:209909',$,$,$,$,$,.FLOOR.);
+#3=IFCSLAB('s2',$,'Floor:Cubierta plana transitable',$,$,$,$,$,.FLOOR.);
+#4=IFCSLAB('s3',$,'Floor:Hormigón-425 mm doméstico:208841',$,$,$,$,$,.FLOOR.);
+ENDSEC;
+END-ISO-10303-21;`;
+    const m = await parseIfcText(t, 'multilingual-roof.ifc');
+    const chapaGrecada = m.elements.find((e) => e.name.includes('chapa grecada'));
+    const cubierta = m.elements.find((e) => e.name.includes('Cubierta'));
+    const groundSlab = m.elements.find((e) => e.name.includes('Hormigón-425'));
+    expect(chapaGrecada?.category).toBe('roof');
+    expect(cubierta?.category).toBe('roof');
+    expect(groundSlab?.category).toBe('floor');
+  });
 });
+

@@ -13,8 +13,17 @@ export interface PersistedProject {
 }
 
 export function saveProject(p: Omit<PersistedProject, 'savedAt'>): void {
-  const payload: PersistedProject = { ...p, savedAt: new Date().toISOString() };
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
+  try {
+    const payload: PersistedProject = { ...p, savedAt: new Date().toISOString() };
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
+  } catch {
+    try {
+      const fallback: PersistedProject = { ...p, modelMeta: null, savedAt: new Date().toISOString() };
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(fallback));
+    } catch {
+      // non-fatal
+    }
+  }
 }
 
 export function loadProject(): PersistedProject | null {

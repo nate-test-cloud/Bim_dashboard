@@ -2068,3 +2068,52 @@ input[type="range"]::-webkit-slider-thumb:hover {
   margin-right: 4px;
 }
 
+.outliner-layers-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.outliner-layer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-xs);
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--rule);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-body);
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.outliner-layer-pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.outliner-layer-pill.active {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text-lead);
+}
+
+.outliner-layer-pill.dimmed {
+  opacity: 0.45;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.outliner-layer-pill-eye {
+  font-size: 10px;
+  opacity: 0.8;
+}
+

@@ -29,6 +29,7 @@ export type ElementCategory =
   | 'roof'
   | 'floor'
   | 'structure' // members, plates, beams, columns… viewer-only, excluded from heat math
+  | 'mass' // conceptual masses, mass floors, helper volumes — hidden by default
   | 'storey'
   | 'space'
   | 'other';
