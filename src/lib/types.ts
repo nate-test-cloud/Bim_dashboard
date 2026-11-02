@@ -55,6 +55,7 @@ export interface BuildingElement {
   uProvenance?: Provenance;
   material?: string;
   materialProvenance?: Provenance;
+  materialStandard?: string;
   /** Approximate box dims (m) used to draw the element in the 3D viewer. */
   dims?: { x: number; y: number; z: number };
   center?: { x: number; y: number; z: number };
@@ -111,10 +112,12 @@ export interface DesignInputs {
   wallU: ProvValue;
   roofU: ProvValue;
   glazingU: ProvValue;
+  slabU?: ProvValue;
+  doorU?: ProvValue;
   shgc: ProvValue; // 0..1
   shadingFactor: ProvValue; // fraction of solar transmitted after shading, 0..1
   wwr: ProvValue; // 0..0.9 target applied to glazing area scaling
-  orientationDeg: number; // building rotation, informational for passive-solar notes
+  orientationDeg: number; // building rotation azimuth (0° = North, 90° = East, 180° = South, 270° = West)
   infiltrationACH: number;
   internalGainsWm2: number;
   ventilationOpenableFraction: number; // 0..1 of glazing openable
@@ -135,6 +138,14 @@ export interface CalcComponent {
   qW: number; // signed: + = heat loss (out of building), − = heat gain
 }
 
+export interface FacadeSolarGain {
+  orientation: string;
+  azimuthDeg: number;
+  glazingM2: number;
+  incidentWm2: number;
+  gainW: number;
+}
+
 export interface CalcResults {
   mode: 'analytical-demo';
   deltaTK: number;
@@ -144,18 +155,32 @@ export interface CalcResults {
   internalGainsW: number;
   ventilationW: number; // signed like transmission (+ = loss)
   heatingLoadW: number;
-  coolingLoadW: number;
+  coolingLoadW: number; // total cooling (sensible + latent)
+  sensibleCoolingLoadW: number;
+  latentCoolingLoadW: number;
+  humidityRatioOutGKg: number;
+  humidityRatioInGKg: number;
   activeMode: 'heating' | 'cooling' | 'neutral';
   operativeTempFreeC: number; // free-running steady-state estimate
   operativeTempMaintainedC: number; // ≈ setpoint when HVAC active
   comfortStatus: 'comfortable' | 'slightly-warm' | 'warm' | 'hot' | 'slightly-cool' | 'cool' | 'cold';
+  pmv: number;
+  ppd: number;
+  adaptiveComfortCompliance?: boolean;
+  adaptiveComfortNote?: string;
   daylightPotentialPct: number; // 0..100, explicitly NOT validated DA
   euiIllustrative: number | null; // kWh/m²/yr or null when not annualizable
   annualEnergyKwh: number | null;
   carbonKgPerYr: number | null;
+  embodiedCarbonKg: number | null;
+  totalLifeCycleCarbonKg: number | null;
+  euiTargetVariance: number | null; // euiIllustrative - euiTargetKwhM2Yr
+  euiCompliant: boolean | null;
   natVentPotential: 'high' | 'moderate' | 'low' | 'none';
   natVentNote: string;
   transmissionByComponent: { label: string; valueW: number }[];
+  facadeBreakdown: FacadeSolarGain[];
+  sunPosition: { altitudeDeg: number; azimuthDeg: number };
   warnings: string[];
 }
 

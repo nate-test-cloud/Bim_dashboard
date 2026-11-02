@@ -20,6 +20,7 @@
  * callers must surface the "export to IFC" guidance.
  */
 import * as WebIFC from 'web-ifc';
+import { resolveMaterialUValue } from './materialLibrary';
 import type { BuildingElement, BuildingModel, MeshGeometryData, Provenance } from './types';
 
 interface RawEntity {
@@ -1023,16 +1024,25 @@ async function parseIfcTextInternal(
     }
     if (areaProv === 'unknown') areaM2 = 0;
 
+    const mat = info?.materials?.[0];
+    let matStandard: string | undefined;
     let uProv: Provenance = 'unknown';
     let uVal: number | undefined;
     if (info?.uValue !== undefined && Number.isFinite(info.uValue) && info.uValue > 0 && info.uValue < 10) {
       uVal = info.uValue;
       uProv = 'extracted';
       if (cat !== 'structure') uFound++;
-    } else if (cat !== 'structure') {
-      uMissing++;
+    } else {
+      const lookup = resolveMaterialUValue(mat, cat, name);
+      if (lookup) {
+        uVal = lookup.entry.uValueWm2K;
+        uProv = 'derived';
+        matStandard = lookup.entry.standard;
+        if (cat !== 'structure') uFound++;
+      } else if (cat !== 'structure') {
+        uMissing++;
+      }
     }
-    const mat = info?.materials?.[0];
 
     let dims: BuildingElement['dims'];
     let center: BuildingElement['center'];
@@ -1086,6 +1096,7 @@ async function parseIfcTextInternal(
       uProvenance: uProv,
       material: mat,
       materialProvenance: mat ? 'extracted' : 'unknown',
+      materialStandard: matStandard,
       dims,
       center,
       rotation,
@@ -1559,12 +1570,22 @@ export async function parseIfcWithWebIfc(
         totalFloorArea += areaM2;
       }
 
+      let matStandard: string | undefined;
+      let finalUVal: number | undefined = uVal;
       let uProv: Provenance = 'unknown';
-      if (uVal !== undefined) {
+      if (finalUVal !== undefined) {
         uProv = 'extracted';
         if (cat !== 'structure') uFound++;
-      } else if (cat !== 'structure') {
-        uMissing++;
+      } else {
+        const lookup = resolveMaterialUValue(material, cat, name);
+        if (lookup) {
+          finalUVal = lookup.entry.uValueWm2K;
+          uProv = 'derived';
+          matStandard = lookup.entry.standard;
+          if (cat !== 'structure') uFound++;
+        } else if (cat !== 'structure') {
+          uMissing++;
+        }
       }
 
       elements.push({
@@ -1575,9 +1596,11 @@ export async function parseIfcWithWebIfc(
         category: cat,
         areaM2: +areaM2.toFixed(2),
         areaProvenance: areaProv,
-        uValueWm2K: uVal ? +uVal.toFixed(3) : undefined,
+        uValueWm2K: finalUVal ? +finalUVal.toFixed(3) : undefined,
         uProvenance: uProv,
         material,
+        materialProvenance: material ? 'extracted' : 'unknown',
+        materialStandard: matStandard,
         dims,
         center,
         meshGeometries: geoms,

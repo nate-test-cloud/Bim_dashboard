@@ -37,6 +37,7 @@ export function sampleBuilding(): BuildingModel {
         areaM2: oN, areaProvenance: 'derived',
         uValueWm2K: 0.35, uProvenance: 'assumption',
         material: 'Cavity masonry + 100mm mineral wool (assumed)', materialProvenance: 'assumption',
+        materialStandard: 'ISO 10456',
         dims: { x: 20, y: 7, z: 0.3 }, center: { x: 0, y: 3.5, z: -6 },
       },
       {
@@ -44,6 +45,7 @@ export function sampleBuilding(): BuildingModel {
         areaM2: oS, areaProvenance: 'derived',
         uValueWm2K: 0.35, uProvenance: 'assumption',
         material: 'Cavity masonry + 100mm mineral wool (assumed)', materialProvenance: 'assumption',
+        materialStandard: 'ISO 10456',
         dims: { x: 20, y: 7, z: 0.3 }, center: { x: 0, y: 3.5, z: 6 },
       },
       {
@@ -51,6 +53,7 @@ export function sampleBuilding(): BuildingModel {
         areaM2: oE, areaProvenance: 'derived',
         uValueWm2K: 0.35, uProvenance: 'assumption',
         material: 'Cavity masonry + 100mm mineral wool (assumed)', materialProvenance: 'assumption',
+        materialStandard: 'ISO 10456',
         dims: { x: 0.3, y: 7, z: 12 }, center: { x: 10, y: 3.5, z: 0 },
       },
       {
@@ -58,6 +61,7 @@ export function sampleBuilding(): BuildingModel {
         areaM2: oW, areaProvenance: 'derived',
         uValueWm2K: 0.35, uProvenance: 'assumption',
         material: 'Cavity masonry + 100mm mineral wool (assumed)', materialProvenance: 'assumption',
+        materialStandard: 'ISO 10456',
         dims: { x: 0.3, y: 7, z: 12 }, center: { x: -10, y: 3.5, z: 0 },
       },
       {
@@ -65,6 +69,7 @@ export function sampleBuilding(): BuildingModel {
         areaM2: +(glazing * 0.32).toFixed(1), areaProvenance: 'derived',
         uValueWm2K: 1.4, uProvenance: 'assumption',
         material: 'Double low-e glazing, Al frame (assumed)', materialProvenance: 'assumption',
+        materialStandard: 'EN 673',
         dims: { x: 18, y: 1.6, z: 0.1 }, center: { x: 0, y: 4.2, z: -6.05 },
       },
       {
@@ -72,6 +77,7 @@ export function sampleBuilding(): BuildingModel {
         areaM2: +(glazing * 0.36).toFixed(1), areaProvenance: 'derived',
         uValueWm2K: 1.4, uProvenance: 'assumption',
         material: 'Double low-e glazing, Al frame (assumed)', materialProvenance: 'assumption',
+        materialStandard: 'EN 673',
         dims: { x: 18, y: 1.6, z: 0.1 }, center: { x: 0, y: 4.2, z: 6.05 },
       },
       {
@@ -79,6 +85,7 @@ export function sampleBuilding(): BuildingModel {
         areaM2: +(glazing * 0.16).toFixed(1), areaProvenance: 'derived',
         uValueWm2K: 1.4, uProvenance: 'assumption',
         material: 'Double low-e glazing, Al frame (assumed)', materialProvenance: 'assumption',
+        materialStandard: 'EN 673',
         dims: { x: 0.1, y: 1.6, z: 10 }, center: { x: 10.05, y: 4.2, z: 0 },
       },
       {
@@ -87,6 +94,7 @@ export function sampleBuilding(): BuildingModel {
         areaProvenance: 'derived',
         uValueWm2K: 1.4, uProvenance: 'assumption',
         material: 'Double low-e glazing, Al frame (assumed)', materialProvenance: 'assumption',
+        materialStandard: 'EN 673',
         dims: { x: 0.1, y: 1.6, z: 10 }, center: { x: -10.05, y: 4.2, z: 0 },
       },
       {
@@ -94,12 +102,15 @@ export function sampleBuilding(): BuildingModel {
         areaM2: 240, areaProvenance: 'derived',
         uValueWm2K: 0.25, uProvenance: 'assumption',
         material: 'Concrete deck + 120mm PIR (assumed)', materialProvenance: 'assumption',
+        materialStandard: 'ISO 10456',
         dims: { x: 20, y: 0.3, z: 12 }, center: { x: 0, y: 7.1, z: 0 },
       },
       {
         id: 'floor-1', name: 'Ground floor slab', category: 'floor',
         areaM2: 240, areaProvenance: 'derived',
+        uValueWm2K: 0.40, uProvenance: 'assumption',
         material: 'Ground-bearing slab (assumed)', materialProvenance: 'assumption',
+        materialStandard: 'ISO 13370',
         dims: { x: 20, y: 0.3, z: 12 }, center: { x: 0, y: -0.15, z: 0 },
       },
       {
@@ -107,6 +118,7 @@ export function sampleBuilding(): BuildingModel {
         areaM2: 4, areaProvenance: 'derived',
         uValueWm2K: 2.2, uProvenance: 'assumption',
         material: 'Glazed entrance doors (assumed)', materialProvenance: 'assumption',
+        materialStandard: 'ISO 10077-1',
         dims: { x: 2, y: 2.4, z: 0.15 }, center: { x: 0, y: 1.2, z: 6.05 },
       },
     ],

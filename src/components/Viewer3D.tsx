@@ -19,6 +19,11 @@ interface Props {
   onToggleWireframe?: () => void;
   onToggleGrid?: () => void;
   onToggleAxes?: () => void;
+  sunPosition?: { altitudeDeg: number; azimuthDeg: number };
+  orientationDeg?: number;
+  cloudCoverPct?: number;
+  greenRoofFraction?: number;
+  greenWallFraction?: number;
 }
 
 // Architectural Monochromatic Grey Studio Palette (Distinctly greyish, never washed-out white, never black)
@@ -41,6 +46,8 @@ interface SceneRefs {
   meshes: Map<string, THREE.Mesh>;
   struct: THREE.InstancedMesh | null;
   ray: THREE.Raycaster;
+  sunLight: THREE.DirectionalLight;
+  ambientLight: THREE.AmbientLight;
 }
 
 const structIdsOf = (s: SceneRefs): string[] =>
@@ -540,7 +547,7 @@ export default function Viewer3D(p: Props) {
         renderer.setSize(w, h);
       };
       window.addEventListener('resize', onResize);
-      sceneRef.current = { scene, camera, renderer, controls, meshes, struct, ray };
+      sceneRef.current = { scene, camera, renderer, controls, meshes, struct, ray, sunLight: sun, ambientLight: ambient };
       fitCamera();
 
       return () => {
@@ -574,6 +581,26 @@ export default function Viewer3D(p: Props) {
     if (gridObj) gridObj.visible = p.showGrid;
     const axesObj = s.scene.getObjectByName('axes');
     if (axesObj) axesObj.visible = Boolean(p.showAxes);
+
+    // Update sun lighting position & intensity from orientation, sun position, and cloud cover
+    if (s.sunLight && s.ambientLight) {
+      const sunAlt = p.sunPosition?.altitudeDeg ?? 50;
+      const sunAz = p.sunPosition?.azimuthDeg ?? 180;
+      const orient = p.orientationDeg ?? 0;
+      const cloud = p.cloudCoverPct ?? 20;
+
+      const altRad = (sunAlt * Math.PI) / 180;
+      const azRad = ((sunAz - orient) * Math.PI) / 180;
+      const radius = 80;
+      const x = radius * Math.cos(altRad) * Math.sin(azRad);
+      const y = radius * Math.sin(altRad);
+      const z = radius * Math.cos(altRad) * Math.cos(azRad);
+      s.sunLight.position.set(x, y, z);
+
+      const cloudFrac = Math.max(0, Math.min(1, cloud / 100));
+      s.sunLight.intensity = Math.max(0.35, 1.45 * (1 - 0.7 * cloudFrac));
+      s.ambientLight.intensity = 1.1 + 0.5 * cloudFrac;
+    }
 
     if (s.struct) {
       s.struct.visible = p.visibleTypes['structure'] !== false;
@@ -619,6 +646,9 @@ export default function Viewer3D(p: Props) {
       }
     }
 
+    const greenRoof = p.greenRoofFraction ?? 0;
+    const greenWall = p.greenWallFraction ?? 0;
+
     s.meshes.forEach((obj, eid) => {
       const el = p.model.elements.find((e) => e.id === eid);
       const cat = el?.category ?? 'other';
@@ -628,10 +658,18 @@ export default function Viewer3D(p: Props) {
         if ((child as THREE.Mesh).isMesh) {
           const m = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
           if (m && 'wireframe' in m) m.wireframe = p.wireframe;
+          // Apply subtle architectural green tint when green coverage is active
+          if (m && m.color && (cat === 'roof' || cat === 'wall')) {
+            const baseColor = cat === 'roof' ? COLORS.roof : COLORS.wall;
+            const targetColor = cat === 'roof' ? 0x607764 : 0x8a9986; // Architectural slate sage
+            const frac = cat === 'roof' ? greenRoof : greenWall;
+            const c = new THREE.Color(baseColor).lerp(new THREE.Color(targetColor), frac);
+            m.color.copy(c);
+          }
         }
       });
     });
-  }, [p.wireframe, p.showGrid, p.showAxes, p.visibleTypes, p.hiddenElementIds, p.selectedId, p.autoRotate, p.model]);
+  }, [p.wireframe, p.showGrid, p.showAxes, p.visibleTypes, p.hiddenElementIds, p.selectedId, p.autoRotate, p.model, p.sunPosition, p.orientationDeg, p.cloudCoverPct, p.greenRoofFraction, p.greenWallFraction]);
 
   return (
     <div className="viewer-container">

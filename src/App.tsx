@@ -28,6 +28,7 @@ import type {
   DesignInputs,
   EnvInputs,
   IntegrationStatus,
+  Provenance,
   ProvValue,
   Scenario,
 } from './lib/types';
@@ -52,10 +53,12 @@ function avgU(model: BuildingModel, cat: string, fallback: number): ProvValue {
   const els = model.elements.filter((e) => e.category === cat && e.uValueWm2K && e.uValueWm2K > 0);
   if (!els.length) return pv(fallback, 'assumption');
   const ext = els.filter((e) => e.uProvenance === 'extracted');
-  const use = ext.length ? ext : els;
+  const der = els.filter((e) => e.uProvenance === 'derived');
+  const use = ext.length ? ext : der.length ? der : els;
   const wSum = use.reduce((a, e) => a + e.areaM2, 0);
   const v = use.reduce((a, e) => a + (e.uValueWm2K ?? 0) * e.areaM2, 0) / Math.max(wSum, 1e-6);
-  return { value: +v.toFixed(2), provenance: ext.length ? 'extracted' : 'assumption' };
+  const prov: Provenance = ext.length ? 'extracted' : der.length ? 'derived' : 'assumption';
+  return { value: +v.toFixed(2), provenance: prov };
 }
 
 function designFromModel(model: BuildingModel): DesignInputs {
@@ -64,6 +67,8 @@ function designFromModel(model: BuildingModel): DesignInputs {
     wallU: avgU(model, 'wall', 0.35),
     roofU: avgU(model, 'roof', 0.25),
     glazingU: avgU(model, 'window', 1.4),
+    slabU: avgU(model, 'floor', 0.40),
+    doorU: avgU(model, 'door', 2.2),
     shgc: pv(0.35, 'assumption'),
     shadingFactor: pv(1.0, 'assumption'),
     wwr: { value: +s.wwr.toFixed(2) || 0.4, provenance: s.wallArea + s.windowArea > 0 ? 'derived' : 'assumption' },
@@ -92,9 +97,15 @@ const DEFAULT_ENV: EnvInputs = {
 };
 
 function ProvTag({ v }: { v: ProvValue }) {
-  const code = v.provenance === 'extracted' ? 'IFC' : v.provenance === 'derived' ? 'GEO' : 'STD';
+  const code = v.provenance === 'extracted' ? 'IFC' : v.provenance === 'derived' ? 'ISO' : 'STD';
+  const tip =
+    v.provenance === 'extracted'
+      ? 'Extracted directly from IFC PropertySet (ThermalTransmittance)'
+      : v.provenance === 'derived'
+      ? 'Derived from identified material name (ISO 10456 / ISO 10077-1 / ASHRAE)'
+      : PROVENANCE_LABEL[v.provenance];
   return (
-    <span className={`prov ${v.provenance}`} title={PROVENANCE_LABEL[v.provenance]}>
+    <span className={`prov ${v.provenance}`} title={tip}>
       {code}
     </span>
   );
@@ -394,6 +405,27 @@ export default function App() {
     [summary, design.wwr.value],
   );
 
+  const identifiedMaterials = useMemo(() => {
+    const map = new Map<string, { material: string; category: string; areaM2: number; uValue?: number; standard?: string }>();
+    for (const e of model.elements) {
+      if (!e.material) continue;
+      const key = `${e.category}-${e.material}`;
+      const existing = map.get(key);
+      if (existing) {
+        existing.areaM2 += e.areaM2;
+      } else {
+        map.set(key, {
+          material: e.material,
+          category: e.category,
+          areaM2: e.areaM2,
+          uValue: e.uValueWm2K,
+          standard: e.materialStandard,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.areaM2 - a.areaM2);
+  }, [model.elements]);
+
   const heatInputs: HeatBalanceInputs = useMemo(
     () => ({
       areas: {
@@ -401,19 +433,23 @@ export default function App() {
         roofM2: summary.roofArea,
         glazingM2: scaled.glazingM2,
         doorM2: summary.doorArea,
+        slabM2: model.floorAreaM2,
       },
       uValues: {
         wallU: design.wallU.value * (1 - 0.15 * design.greenWallFraction),
         roofU: design.roofU.value * (1 - 0.25 * design.greenRoofFraction),
         glazingU: design.glazingU.value,
-        doorU: 2.2,
+        doorU: design.doorU?.value ?? 2.2,
+        slabU: design.slabU?.value ?? 0.40,
       },
       env,
       design,
       volumeM3: model.volumeM3,
       floorAreaM2: model.floorAreaM2,
+      latitude: siteLocation?.latitude ?? 45,
+      model,
     }),
-    [scaled, summary, design, env, model],
+    [scaled, summary, design, env, model, siteLocation],
   );
   const results = useMemo(() => heatBalance(heatInputs), [heatInputs]);
 
@@ -421,17 +457,26 @@ export default function App() {
     const sum = summarizeEnvelope(model);
     const sc = scaledGlazingArea(sum, s.design.wwr.value);
     return heatBalance({
-      areas: { wallM2: sc.opaqueWallM2, roofM2: sum.roofArea, glazingM2: sc.glazingM2, doorM2: sum.doorArea },
+      areas: {
+        wallM2: sc.opaqueWallM2,
+        roofM2: sum.roofArea,
+        glazingM2: sc.glazingM2,
+        doorM2: sum.doorArea,
+        slabM2: model.floorAreaM2,
+      },
       uValues: {
         wallU: s.design.wallU.value * (1 - 0.15 * s.design.greenWallFraction),
         roofU: s.design.roofU.value * (1 - 0.25 * s.design.greenRoofFraction),
         glazingU: s.design.glazingU.value,
-        doorU: 2.2,
+        doorU: s.design.doorU?.value ?? 2.2,
+        slabU: s.design.slabU?.value ?? 0.40,
       },
       env: s.env,
       design: s.design,
       volumeM3: model.volumeM3,
       floorAreaM2: model.floorAreaM2,
+      latitude: siteLocation?.latitude ?? 45,
+      model,
     });
   };
 
@@ -1055,6 +1100,11 @@ export default function App() {
             onToggleAutoRotate={() => setAutoRotate((v) => !v)}
             onToggleWireframe={() => setWireframe((v) => !v)}
             onToggleGrid={() => setShowGrid((v) => !v)}
+            sunPosition={results.sunPosition}
+            orientationDeg={design.orientationDeg}
+            cloudCoverPct={env.cloudCoverPct}
+            greenRoofFraction={design.greenRoofFraction}
+            greenWallFraction={design.greenWallFraction}
           />
 
           {/* Blender-Style Left Viewport 'T' Shelf Toolbar */}
@@ -1108,25 +1158,25 @@ export default function App() {
             <div className="hud-metric">
               <span className="hud-label">OPERATIVE</span>
               <span className="hud-val">{results.operativeTempMaintainedC.toFixed(1)}°C</span>
-              <span className="hud-sub">{results.comfortStatus}</span>
+              <span className="hud-sub">{results.comfortStatus} · PMV {results.pmv}</span>
             </div>
             <div className="hud-sep" />
             <div className="hud-metric">
               <span className="hud-label">DEMAND ({results.activeMode.toUpperCase()})</span>
               <span className="hud-val">{Math.max(heatKW, coolKW).toFixed(1)} kW</span>
-              <span className="hud-sub">h {heatKW.toFixed(1)} · c {coolKW.toFixed(1)}</span>
+              <span className="hud-sub">h {heatKW.toFixed(1)} · c {coolKW.toFixed(1)}{results.latentCoolingLoadW > 0 ? ` (lat ${(results.latentCoolingLoadW / 1000).toFixed(1)})` : ''}</span>
             </div>
             <div className="hud-sep" />
             <div className="hud-metric">
               <span className="hud-label">SOLAR GAIN</span>
               <span className="hud-val">{(results.solarGainW / 1000).toFixed(1)} kW</span>
-              <span className="hud-sub">transmitted</span>
+              <span className="hud-sub">alt {results.sunPosition.altitudeDeg}° · az {results.sunPosition.azimuthDeg}°</span>
             </div>
             <div className="hud-sep" />
             <div className="hud-metric">
               <span className="hud-label">ANNUAL EUI</span>
               <span className="hud-val">{eui?.toFixed(0) ?? '—'} <span className="hud-unit">kWh/m²</span></span>
-              <span className="hud-sub">target: {design.euiTargetKwhM2Yr}</span>
+              <span className="hud-sub">target: {design.euiTargetKwhM2Yr} {results.euiCompliant ? '• PASS' : `• +${results.euiTargetVariance}`}</span>
             </div>
           </div>
 
@@ -1185,6 +1235,15 @@ export default function App() {
                       <div className="drawer-chart-card">
                         <div className="drawer-card-title">Envelope Conduction Magnitude (|Q| W)</div>
                         <SimpleBar data={results.transmissionByComponent.map((c) => ({ name: c.label, value: +c.valueW.toFixed(0) }))} />
+                      </div>
+                      <div className="drawer-chart-card">
+                        <div className="drawer-card-title">Directional Solar Gain by Facade (W)</div>
+                        <SimpleBar
+                          data={results.facadeBreakdown.map((f) => ({
+                            name: `${f.orientation.replace(' Facade', '')} (${Math.round(f.azimuthDeg)}°)`,
+                            value: +f.gainW.toFixed(0),
+                          }))}
+                        />
                       </div>
                       <div className="drawer-chart-card">
                         <div className="drawer-card-title">{siteLocation ? `Site Climate Scenarios (kW)` : `Climate Presets (kW)`}</div>
@@ -1369,6 +1428,17 @@ export default function App() {
                   {selected.uValueWm2K ? <span>· {selected.uValueWm2K} W/m²K</span> : null}
                   {selected.uProvenance && <Prov v={{ value: 0, provenance: selected.uProvenance }} />}
                 </div>
+                {selected.material && (
+                  <div style={{ fontSize: 11, color: 'var(--text-sub)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                    <span style={{ opacity: 0.7 }}>Material:</span>
+                    <span style={{ color: 'var(--text-lead)', fontWeight: 500 }}>{selected.material}</span>
+                    {selected.materialStandard && (
+                      <span style={{ fontSize: 9.5, padding: '1px 5px', borderRadius: 3, background: 'rgba(234, 118, 0, 0.12)', color: '#ea7600', border: '1px solid rgba(234, 118, 0, 0.25)' }}>
+                        {selected.materialStandard}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1380,13 +1450,15 @@ export default function App() {
                 <Slider label="Wall U-value" value={design.wallU.value} min={0.1} max={3} step={0.05} unit="W/m²K" onChange={(v) => setD('wallU', v)} prov={design.wallU} />
                 <Slider label="Roof U-value" value={design.roofU.value} min={0.1} max={3} step={0.05} unit="W/m²K" onChange={(v) => setD('roofU', v)} prov={design.roofU} />
                 <Slider label="Glazing U-value" value={design.glazingU.value} min={0.5} max={5.8} step={0.1} unit="W/m²K" onChange={(v) => setD('glazingU', v)} prov={design.glazingU} />
+                <Slider label="Ground slab U-value" value={design.slabU?.value ?? 0.4} min={0.1} max={2.5} step={0.05} unit="W/m²K" onChange={(v) => setD('slabU', v)} prov={design.slabU} tip="ISO 13370 ground-coupled slab conduction." />
+                <Slider label="Door U-value" value={design.doorU?.value ?? 2.2} min={0.5} max={4.0} step={0.1} unit="W/m²K" onChange={(v) => setD('doorU', v)} prov={design.doorU} tip="Exterior doors conduction." />
                 <Slider label="SHGC" value={design.shgc.value} min={0.05} max={0.9} step={0.01} unit="" onChange={(v) => setD('shgc', v)} prov={design.shgc} tip="Solar heat gain coefficient of the glazing (0–1)." />
                 <Slider label="External shading transmit" value={design.shadingFactor.value} min={0.1} max={1} step={0.05} unit="" onChange={(v) => setD('shadingFactor', v)} prov={design.shadingFactor} tip="Fraction of sun transmitted after external shading." />
 
                 <div className="inspector-sec-head" style={{ marginTop: 14 }}>VENTILATION &amp; GAINS</div>
                 <Slider label="Infiltration" value={design.infiltrationACH} min={0} max={3} step={0.1} unit="ACH" onChange={(v) => setDesign((d) => ({ ...d, infiltrationACH: v }))} tip="Air changes per hour. Q_vent = 0.33·ACH·V·ΔT." />
                 <Slider label="Internal gains" value={design.internalGainsWm2} min={0} max={30} step={0.5} unit="W/m²" onChange={(v) => setDesign((d) => ({ ...d, internalGainsWm2: v }))} tip="Occupants + equipment + lighting per floor m²." />
-                <Slider label="Orientation" value={design.orientationDeg} min={0} max={360} step={5} unit="°" onChange={(v) => setDesign((d) => ({ ...d, orientationDeg: v }))} tip="Orientation azimuth." />
+                <Slider label="Orientation" value={design.orientationDeg} min={0} max={360} step={5} unit="°" onChange={(v) => setDesign((d) => ({ ...d, orientationDeg: v }))} tip="Building azimuth (0°=N, 90°=E, 180°=S, 270°=W). Rotates directional solar radiation across facades." />
 
                 <div className="inspector-sec-head" style={{ marginTop: 14 }}>PASSIVE GREENERY</div>
                 <button
@@ -1521,11 +1593,26 @@ export default function App() {
 
                 <div className="inspector-sec-head">BOUNDARY CONDITIONS</div>
                 <Slider label="Outdoor air temp" value={env.outdoorTempC} min={-10} max={50} step={0.5} unit="°C" onChange={(v) => set('outdoorTempC', v)} tip="Dry-bulb outdoor temperature." />
-                <Slider label="Solar radiation" value={env.solarIrradianceWm2} min={0} max={1200} step={10} unit="W/m²" onChange={(v) => set('solarIrradianceWm2', v)} tip="User-supplied incident irradiance on the glazing plane." />
-                <Slider label="Cloud cover" value={env.cloudCoverPct} min={0} max={100} step={1} unit="%" onChange={(v) => set('cloudCoverPct', v)} tip="Informational cloud cover." />
+                <Slider label="Solar radiation" value={env.solarIrradianceWm2} min={0} max={1200} step={10} unit="W/m²" onChange={(v) => set('solarIrradianceWm2', v)} tip="Incident horizontal irradiance." />
+                <Slider label="Cloud cover" value={env.cloudCoverPct} min={0} max={100} step={1} unit="%" onChange={(v) => set('cloudCoverPct', v)} tip="Cloud cover: modulates direct normal beam vs diffuse sky radiation." />
                 <Slider label="Wind speed" value={env.windSpeedMs} min={0} max={20} step={0.5} unit="m/s" onChange={(v) => set('windSpeedMs', v)} tip="Feeds natural ventilation & free-cooling credit." />
-                <Slider label="Relative humidity" value={env.relHumidityPct} min={0} max={100} step={1} unit="%" onChange={(v) => set('relHumidityPct', v)} />
+                <Slider label="Relative humidity" value={env.relHumidityPct} min={0} max={100} step={1} unit="%" onChange={(v) => set('relHumidityPct', v)} tip="Relative humidity: drives latent dehumidification cooling demand & PMV comfort." />
                 <Slider label="Indoor setpoint" value={env.indoorSetpointC} min={16} max={28} step={0.5} unit="°C" onChange={(v) => set('indoorSetpointC', v)} tip="Heating/cooling comfort setpoint." />
+
+                <div className="ctl" style={{ marginTop: 8 }}>
+                  <div className="row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Analysis Season / Date</label>
+                    <span className="mono" style={{ fontSize: 11, color: 'var(--text-lead)' }}>{env.analysisDate}</span>
+                  </div>
+                  <input
+                    type="date"
+                    className="txt"
+                    style={{ width: '100%', marginTop: 3, fontSize: 11.5, background: 'var(--bg-surface)', color: 'var(--text-lead)', border: '1px solid var(--rule)' }}
+                    value={env.analysisDate}
+                    onChange={(e) => set('analysisDate', e.target.value)}
+                    aria-label="Analysis date"
+                  />
+                </div>
               </div>
             )}
 
@@ -1537,25 +1624,25 @@ export default function App() {
                   <div className="kpi">
                     <span className="label">Operative Temp</span>
                     <span className="big">{results.operativeTempMaintainedC.toFixed(1)}<span style={{ fontSize: 12, color: 'var(--text-muted)' }}> °C</span></span>
-                    <span className="sub">{results.comfortStatus} · free {results.operativeTempFreeC.toFixed(1)}°C</span>
+                    <span className="sub">{results.comfortStatus} · PMV {results.pmv} ({results.ppd}% PPD)</span>
                   </div>
 
                   <div className="kpi">
                     <span className="label">HVAC Demand ({results.activeMode})</span>
                     <span className="big">{(Math.max(heatKW, coolKW)).toFixed(1)}<span style={{ fontSize: 12, color: 'var(--text-muted)' }}> kW</span></span>
-                    <span className="sub">heat {heatKW.toFixed(1)} · cool {coolKW.toFixed(1)} kW</span>
+                    <span className="sub">h {heatKW.toFixed(1)} · c {coolKW.toFixed(1)}{results.latentCoolingLoadW > 0 ? ` (lat ${(results.latentCoolingLoadW / 1000).toFixed(1)})` : ''} kW</span>
                   </div>
 
                   <div className="kpi">
                     <span className="label">Solar Heat Gain</span>
                     <span className="big">{(results.solarGainW / 1000).toFixed(1)}<span style={{ fontSize: 12, color: 'var(--text-muted)' }}> kW</span></span>
-                    <span className="sub">transmitted irradiance</span>
+                    <span className="sub">sun alt {results.sunPosition.altitudeDeg}° · az {results.sunPosition.azimuthDeg}°</span>
                   </div>
 
                   <div className="kpi">
                     <span className="label">Annual EUI</span>
                     <span className="big">{eui?.toFixed(0) ?? '—'}<span style={{ fontSize: 12, color: 'var(--text-muted)' }}> kWh/m²</span></span>
-                    <span className="sub">target: {design.euiTargetKwhM2Yr} kWh/m²</span>
+                    <span className="sub">target: {design.euiTargetKwhM2Yr} {results.euiCompliant ? '• PASS' : `• +${results.euiTargetVariance}`}</span>
                   </div>
                 </div>
 
@@ -1572,7 +1659,10 @@ export default function App() {
                     <tr>
                       <td>Opaque Walls</td>
                       <td style={{ textAlign: 'right' }}>{scaled.opaqueWallM2.toFixed(1)}</td>
-                      <td style={{ textAlign: 'right' }}>{design.wallU.value.toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        {design.wallU.value.toFixed(2)}
+                        {design.greenWallFraction > 0 && <span style={{ color: '#4ade80', fontSize: 10, marginLeft: 3 }}>({(design.wallU.value * (1 - 0.15 * design.greenWallFraction)).toFixed(2)})</span>}
+                      </td>
                     </tr>
                     <tr>
                       <td>Glazing (WWR {(design.wwr.value * 100).toFixed(0)}%)</td>
@@ -1582,27 +1672,80 @@ export default function App() {
                     <tr>
                       <td>Roof Assembly</td>
                       <td style={{ textAlign: 'right' }}>{summary.roofArea.toFixed(1)}</td>
-                      <td style={{ textAlign: 'right' }}>{design.roofU.value.toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        {design.roofU.value.toFixed(2)}
+                        {design.greenRoofFraction > 0 && <span style={{ color: '#4ade80', fontSize: 10, marginLeft: 3 }}>({(design.roofU.value * (1 - 0.25 * design.greenRoofFraction)).toFixed(2)})</span>}
+                      </td>
                     </tr>
                     <tr>
-                      <td>Ground Slab</td>
+                      <td>Ground Slab (ISO 13370)</td>
                       <td style={{ textAlign: 'right' }}>{model.floorAreaM2.toFixed(1)}</td>
-                      <td style={{ textAlign: 'right' }}>—</td>
+                      <td style={{ textAlign: 'right' }}>{(design.slabU?.value ?? 0.4).toFixed(2)}</td>
                     </tr>
+                    {summary.doorArea > 0 && (
+                      <tr>
+                        <td>Exterior Doors</td>
+                        <td style={{ textAlign: 'right' }}>{summary.doorArea.toFixed(1)}</td>
+                        <td style={{ textAlign: 'right' }}>{(design.doorU?.value ?? 2.2).toFixed(2)}</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
 
-                <div className="inspector-sec-head" style={{ marginTop: 14 }}>EMBODIED &amp; OPERATIONAL CARBON</div>
+                <div className="inspector-sec-head" style={{ marginTop: 14 }}>WHOLE-LIFE CARBON (LCA)</div>
                 <div style={{ fontSize: 11.5, background: 'var(--bg-surface)', padding: '8px 10px', borderRadius: 4, border: '1px solid var(--rule)' }} className="mono">
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <span style={{ color: 'var(--text-muted)' }}>Operational CO₂:</span>
                     <strong style={{ color: 'var(--text-lead)' }}>{results.carbonKgPerYr?.toFixed(0) ?? '—'} kg/yr</strong>
                   </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Embodied CO₂ (A1–A3):</span>
+                    <strong style={{ color: 'var(--text-lead)' }}>{(results.embodiedCarbonKg ?? 0).toLocaleString()} kg</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Embodied Intensity:</span>
+                    <span style={{ color: 'var(--text-body)' }}>{((results.embodiedCarbonKg ?? 0) / Math.max(1, model.floorAreaM2)).toFixed(0)} kg/m²</span>
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Carbon Intensity:</span>
-                    <span style={{ color: 'var(--text-body)' }}>{results.carbonKgPerYr && model.floorAreaM2 ? (results.carbonKgPerYr / model.floorAreaM2).toFixed(1) : '—'} kg/m²·yr</span>
+                    <span style={{ color: 'var(--text-muted)' }}>50-Yr Life Cycle:</span>
+                    <strong style={{ color: '#ea7600' }}>{Math.round(((results.totalLifeCycleCarbonKg ?? 0) / 1000)).toLocaleString()} tCO₂e</strong>
                   </div>
                 </div>
+
+                {identifiedMaterials.length > 0 && (
+                  <>
+                    <div className="inspector-sec-head" style={{ marginTop: 14 }}>IDENTIFIED MATERIALS (ISO / ASHRAE)</div>
+                    <table className="spec-table">
+                      <thead>
+                        <tr>
+                          <th>Material Name</th>
+                          <th style={{ textAlign: 'right' }}>Area (m²)</th>
+                          <th style={{ textAlign: 'right' }}>U (W/m²K)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {identifiedMaterials.slice(0, 7).map((m) => (
+                          <tr key={`${m.category}-${m.material}`}>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: 130 }} title={m.material}>
+                                  {m.material.replace(/\(assumed\)/i, '').trim()}
+                                </span>
+                                {m.standard && (
+                                  <span style={{ fontSize: 8.5, padding: '1px 4px', borderRadius: 2, background: 'rgba(234, 118, 0, 0.15)', color: '#ea7600' }}>
+                                    {m.standard}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>{m.areaM2.toFixed(1)}</td>
+                            <td style={{ textAlign: 'right' }}>{m.uValue ? m.uValue.toFixed(2) : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
                 {results.warnings.slice(0, 2).map((w, i) => <div key={i} className="warnbox">• {w}</div>)}
               </div>
             )}
@@ -1737,7 +1880,12 @@ export default function App() {
                                   <span className="outliner-elem-icon">{catIcon}</span>
                                   <div className="outliner-elem-info">
                                     <span className="outliner-elem-name" style={{ opacity: isVisible ? 1 : 0.4 }}>{e.name}</span>
-                                    <span className="outliner-elem-meta">{e.areaM2} m² {e.uValueWm2K ? `· U ${e.uValueWm2K}` : ''}</span>
+                                    <span
+                                      className="outliner-elem-meta"
+                                      title={e.material ? `Material: ${e.material}${e.materialStandard ? ` [${e.materialStandard}]` : ''}` : undefined}
+                                    >
+                                      {e.areaM2} m² {e.uValueWm2K ? `· U ${e.uValueWm2K}` : ''}{e.material ? ` · ${e.material.split('+')[0].trim()}` : ''}
+                                    </span>
                                   </div>
                                   <button
                                     className={`outliner-eye-btn ${isVisible ? 'active' : 'dim'}`}
@@ -1844,21 +1992,17 @@ export default function App() {
               <div className="row"><label>Project name</label></div>
               <input className="txt" value={projectName} onChange={(e) => setProjectName(e.target.value)} />
             </div>
-            <div className="ctl">
-              <div className="row"><label>EUI target (kWh/m²/yr) — user-set reference, not a regulation</label><span className="val">{design.euiTargetKwhM2Yr}</span></div>
-              <input type="range" min={20} max={250} step={5} value={design.euiTargetKwhM2Yr} onChange={(e) => setDesign((d) => ({ ...d, euiTargetKwhM2Yr: Number(e.target.value) }))} />
+            <div className="ctl" style={{ marginTop: 10 }}>
+              <Slider label="EUI target" value={design.euiTargetKwhM2Yr} min={20} max={250} step={5} unit="kWh/m²" onChange={(v) => setDesign((d) => ({ ...d, euiTargetKwhM2Yr: v }))} tip="Design target benchmark reference" />
             </div>
-            <div className="ctl">
-              <div className="row"><label>Carbon factor (kgCO₂/kWh)</label><span className="val">{design.carbonFactorKgPerKwh}</span></div>
-              <input type="range" min={0} max={1} step={0.05} value={design.carbonFactorKgPerKwh} onChange={(e) => setDesign((d) => ({ ...d, carbonFactorKgPerKwh: Number(e.target.value) }))} />
+            <div className="ctl" style={{ marginTop: 8 }}>
+              <Slider label="Carbon factor" value={design.carbonFactorKgPerKwh} min={0} max={1} step={0.05} unit="kg/kWh" onChange={(v) => setDesign((d) => ({ ...d, carbonFactorKgPerKwh: v }))} tip="Grid emissions intensity factor" />
             </div>
-            <div className="ctl">
-              <div className="row"><label>Equivalent heating hours (illustrative annualization)</label><span className="val">{design.equivHeatingHours} h</span></div>
-              <input type="range" min={0} max={3000} step={50} value={design.equivHeatingHours} onChange={(e) => setDesign((d) => ({ ...d, equivHeatingHours: Number(e.target.value) }))} />
+            <div className="ctl" style={{ marginTop: 8 }}>
+              <Slider label="Equivalent heating hours" value={design.equivHeatingHours} min={0} max={3000} step={50} unit="h" onChange={(v) => setDesign((d) => ({ ...d, equivHeatingHours: v }))} tip="Illustrative annualization heating hours" />
             </div>
-            <div className="ctl">
-              <div className="row"><label>Equivalent cooling hours</label><span className="val">{design.equivCoolingHours} h</span></div>
-              <input type="range" min={0} max={4000} step={50} value={design.equivCoolingHours} onChange={(e) => setDesign((d) => ({ ...d, equivCoolingHours: Number(e.target.value) }))} />
+            <div className="ctl" style={{ marginTop: 8 }}>
+              <Slider label="Equivalent cooling hours" value={design.equivCoolingHours} min={0} max={4000} step={50} unit="h" onChange={(v) => setDesign((d) => ({ ...d, equivCoolingHours: v }))} tip="Illustrative annualization cooling hours" />
             </div>
             <div className="btnrow" style={{ marginTop: 8 }}>
               <button className="btn primary" onClick={() => { persist(); setDlg(null); }}>Save project</button>
