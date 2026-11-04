@@ -70,4 +70,13 @@ function modelCachePlugin(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), modelCachePlugin()],
+  server: {
+    headers: {
+      // Required for SharedArrayBuffer (web-ifc multi-threaded WASM).
+      // Even when forcing single-thread mode, these headers prevent
+      // console warnings and future-proof MT enablement.
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+  },
 });
