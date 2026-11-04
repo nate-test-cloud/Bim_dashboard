@@ -1186,12 +1186,13 @@ async function getIfcApi(): Promise<WebIFC.IfcAPI> {
   if (!apiInitPromise) {
     apiInitPromise = (async () => {
       const api = new WebIFC.IfcAPI();
-      await api.Init((path: string) => {
-        if (typeof window !== 'undefined') {
-          return `/wasm/${path}`;
-        }
-        return path;
-      });
+      // Force single-threaded mode to avoid SharedArrayBuffer requirement
+      // (SharedArrayBuffer needs COOP/COEP headers which many deployments lack).
+      // The locateFile callback must match the (path, prefix) => string signature.
+      await api.Init(
+        (_path: string, _prefix: string) => `/wasm/${_path}`,
+        true, // forceSingleThread — avoids web-ifc-mt.wasm + SharedArrayBuffer
+      );
       api.SetLogLevel(WebIFC.LogLevel.LOG_LEVEL_ERROR);
       ifcApiSingleton = api;
       return api;
