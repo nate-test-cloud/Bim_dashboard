@@ -14,7 +14,7 @@ import { exportPdf, toCsv, toJson, downloadText, type ExportBundle } from './lib
 import { parseIfcBuffer, validateIfcFile } from './lib/ifcParser';
 import { loadProject, saveProject, idbSet } from './lib/persistence';
 import { loadServerCache, saveServerCache } from './lib/modelCache';
-import { CLIMATE_PRESETS, sampleBuilding } from './lib/sampleBuilding';
+import { CLIMATE_PRESETS, sampleBuilding, type ClimateArchetype } from './lib/sampleBuilding';
 import {
   fetchSiteClimateData,
   generateMonthlySeriesForSite,
@@ -261,7 +261,7 @@ export default function App() {
   const [isLoadingClimate, setIsLoadingClimate] = useState(false);
   const [showLocDropdown, setShowLocDropdown] = useState(false);
   const [activeClimateMode, setActiveClimateMode] = useState<'current' | 'daylight' | 'summer' | 'winter'>('daylight');
-  const [activeArchetype, setActiveArchetype] = useState<'arid' | 'tropical' | 'temperate' | null>(null);
+  const [activeArchetype, setActiveArchetype] = useState<ClimateArchetype | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
   const searchDebounceRef = useRef<any>(null);
 
@@ -532,8 +532,11 @@ export default function App() {
           { name: `${siteClimate.location.name} (Daylight peak)`, env: siteClimate.daylightPeak },
           { name: `${siteClimate.location.name} (Summer peak)`, env: siteClimate.summerDesign },
           { name: `${siteClimate.location.name} (Winter peak)`, env: siteClimate.winterDesign },
+          { name: 'Tropical ref', env: CLIMATE_PRESETS.tropical.env },
           { name: 'Arid ref', env: CLIMATE_PRESETS.arid.env },
           { name: 'Temperate ref', env: CLIMATE_PRESETS.temperate.env },
+          { name: 'Cold ref', env: CLIMATE_PRESETS.cold.env },
+          { name: 'Polar ref', env: CLIMATE_PRESETS.polar.env },
         ];
         return siteScenarios.map((s) => {
           const r = heatBalance({
@@ -638,7 +641,7 @@ export default function App() {
     }
   };
 
-  const handleApplyArchetype = (key: 'arid' | 'tropical' | 'temperate') => {
+  const handleApplyArchetype = (key: ClimateArchetype) => {
     setActiveArchetype(key);
     setSiteLocation(null);
     setSiteClimate(null);
@@ -1586,13 +1589,15 @@ export default function App() {
 
                 <div className="inspector-sec-head" style={{ marginTop: 14 }}>CLIMATE ARCHETYPES</div>
                 <div className="presets" style={{ marginBottom: 12 }}>
-                  <button className={activeArchetype === 'arid' && !siteLocation ? 'active' : ''} onClick={() => handleApplyArchetype('arid')}>Arid</button>
                   <button className={activeArchetype === 'tropical' && !siteLocation ? 'active' : ''} onClick={() => handleApplyArchetype('tropical')}>Tropical</button>
+                  <button className={activeArchetype === 'arid' && !siteLocation ? 'active' : ''} onClick={() => handleApplyArchetype('arid')}>Arid</button>
                   <button className={activeArchetype === 'temperate' && !siteLocation ? 'active' : ''} onClick={() => handleApplyArchetype('temperate')}>Temperate</button>
+                  <button className={activeArchetype === 'cold' && !siteLocation ? 'active' : ''} onClick={() => handleApplyArchetype('cold')}>Cold</button>
+                  <button className={activeArchetype === 'polar' && !siteLocation ? 'active' : ''} onClick={() => handleApplyArchetype('polar')}>Polar</button>
                 </div>
 
                 <div className="inspector-sec-head">BOUNDARY CONDITIONS</div>
-                <Slider label="Outdoor air temp" value={env.outdoorTempC} min={-10} max={50} step={0.5} unit="°C" onChange={(v) => set('outdoorTempC', v)} tip="Dry-bulb outdoor temperature." />
+                <Slider label="Outdoor air temp" value={env.outdoorTempC} min={-40} max={50} step={0.5} unit="°C" onChange={(v) => set('outdoorTempC', v)} tip="Dry-bulb outdoor temperature." />
                 <Slider label="Solar radiation" value={env.solarIrradianceWm2} min={0} max={1200} step={10} unit="W/m²" onChange={(v) => set('solarIrradianceWm2', v)} tip="Incident horizontal irradiance." />
                 <Slider label="Cloud cover" value={env.cloudCoverPct} min={0} max={100} step={1} unit="%" onChange={(v) => set('cloudCoverPct', v)} tip="Cloud cover: modulates direct normal beam vs diffuse sky radiation." />
                 <Slider label="Wind speed" value={env.windSpeedMs} min={0} max={20} step={0.5} unit="m/s" onChange={(v) => set('windSpeedMs', v)} tip="Feeds natural ventilation & free-cooling credit." />

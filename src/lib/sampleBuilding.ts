@@ -177,16 +177,26 @@ export const DEFAULT_DESIGN = {
 };
 
 export const CLIMATE_PRESETS = {
-  arid: {
-    label: 'Arid (Riyadh-like)',
-    env: { outdoorTempC: 38, solarIrradianceWm2: 1000, cloudCoverPct: 5, windSpeedMs: 2.5, relHumidityPct: 15 },
-  },
   tropical: {
     label: 'Tropical (Singapore-like)',
     env: { outdoorTempC: 31, solarIrradianceWm2: 750, cloudCoverPct: 45, windSpeedMs: 1.5, relHumidityPct: 80 },
+  },
+  arid: {
+    label: 'Arid (Riyadh-like)',
+    env: { outdoorTempC: 38, solarIrradianceWm2: 1000, cloudCoverPct: 5, windSpeedMs: 2.5, relHumidityPct: 15 },
   },
   temperate: {
     label: 'Temperate (London-like)',
     env: { outdoorTempC: 16, solarIrradianceWm2: 350, cloudCoverPct: 60, windSpeedMs: 4.5, relHumidityPct: 65 },
   },
+  cold: {
+    label: 'Cold / Continental (Moscow-like)',
+    env: { outdoorTempC: -10, solarIrradianceWm2: 150, cloudCoverPct: 70, windSpeedMs: 4.0, relHumidityPct: 75 },
+  },
+  polar: {
+    label: 'Polar (Svalbard-like)',
+    env: { outdoorTempC: -25, solarIrradianceWm2: 50, cloudCoverPct: 55, windSpeedMs: 6.0, relHumidityPct: 60 },
+  },
 } as const;
+
+export type ClimateArchetype = keyof typeof CLIMATE_PRESETS;
