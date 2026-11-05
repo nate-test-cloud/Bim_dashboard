@@ -9,6 +9,7 @@ import {
   sweepSolar,
   type HeatBalanceInputs,
 } from './lib/calculations';
+import { runDynamicIsoSimulation, generateEnergyPlusIdf } from './lib/dynamicSimulation';
 import { parseClimateCsv, SAMPLE_CLIMATE_CSV, type ClimateTable } from './lib/climateCsv';
 import { exportPdf, toCsv, toJson, downloadText, type ExportBundle } from './lib/exports';
 import { parseIfcBuffer, validateIfcFile } from './lib/ifcParser';
@@ -45,7 +46,8 @@ const INTEGRATIONS: IntegrationStatus[] = [
   { name: 'Pollination', status: 'not-configured', detail: 'Not connected — requires Pollination cloud account and API key.' },
   { name: 'Cove.tool', status: 'not-configured', detail: 'Not connected — requires cove.tool project and API access.' },
   { name: 'IES VE', status: 'not-configured', detail: 'Not connected — requires IES VE licence and file-based exchange.' },
-  { name: 'EnergyPlus / OpenStudio', status: 'unavailable', detail: 'No local engine detected — structure reserved for future server-side integration.' },
+  { name: 'EnergyPlus (IDF Exporter)', status: 'connected', detail: 'Ready — full IDF geometry and HVAC definition export supported.' },
+  { name: 'ISO 52016-1 Dynamic Engine', status: 'connected', detail: 'Active — 12-month dynamic quasi-steady thermal mass and seasonal COP simulation.' },
   { name: 'Radiance daylight', status: 'unavailable', detail: 'No daylight engine detected — daylight shown as potential index only.' },
 ];
 
@@ -274,6 +276,7 @@ export default function App() {
     wall: true, window: true, door: true, roof: true, floor: true, structure: true, mass: false, other: true, tower: true,
   });
   const [hiddenElementIds, setHiddenElementIds] = useState<Record<string, boolean>>({});
+  const [simEngine, setSimEngine] = useState<'iso-dynamic' | 'instantaneous'>('iso-dynamic');
   // dialogs
   const [dlg, setDlg] = useState<null | 'bim' | 'climate' | 'help' | 'settings' | 'plugins'>(null);
   const [tab, setTab] = useState<'charts' | 'scenarios' | 'sustain' | 'data'>('charts');
@@ -452,6 +455,22 @@ export default function App() {
     [scaled, summary, design, env, model, siteLocation],
   );
   const results = useMemo(() => heatBalance(heatInputs), [heatInputs]);
+
+  // Dynamic 12-month ISO 52016-1 simulation
+  const dynamicSim = useMemo(() => {
+    return runDynamicIsoSimulation(
+      model,
+      env,
+      design,
+      {},
+      climate?.monthlyAverages,
+      siteLocation?.latitude ?? 45,
+    );
+  }, [model, env, design, climate, siteLocation]);
+
+  const activeEui = simEngine === 'iso-dynamic' ? dynamicSim.dynamicEuiKwhM2Yr : results.euiIllustrative;
+  const isEuiPass = activeEui != null ? activeEui <= design.euiTargetKwhM2Yr : null;
+  const euiVariance = activeEui != null ? +(activeEui - design.euiTargetKwhM2Yr).toFixed(1) : null;
 
   const resultsFor = (s: Scenario) => {
     const sum = summarizeEnvelope(model);
@@ -894,6 +913,7 @@ export default function App() {
     env,
     design,
     results,
+    dynamicSim,
     scenarios,
     scenarioResults: scenarioRows.map((r) => ({
       name: r.name,
@@ -934,7 +954,7 @@ export default function App() {
   }, [model, invFilter]);
   const coolKW = results.coolingLoadW / 1000;
   const heatKW = results.heatingLoadW / 1000;
-  const eui = results.euiIllustrative;
+  const eui = simEngine === 'iso-dynamic' ? dynamicSim.dynamicEuiKwhM2Yr : results.euiIllustrative;
   const [collapsedStoreys, setCollapsedStoreys] = useState<Record<string, boolean>>({});
   const toggleStorey = (st: string) => setCollapsedStoreys((prev) => ({ ...prev, [st]: !prev[st] }));
 
@@ -1069,6 +1089,17 @@ export default function App() {
           <button className="btn" onClick={() => { try { exportPdf(bundle()); } catch (e) { setNotice({ kind: 'err', text: `PDF export failed: ${e instanceof Error ? e.message : e}` }); } }} title="Export Architectural Report">
             Export PDF
           </button>
+          <button
+            className="btn"
+            onClick={() => {
+              const idf = generateEnergyPlusIdf(model, design, env, projectName, siteLocation?.latitude ?? 45, siteLocation?.longitude ?? 0);
+              downloadText(`${projectName.replace(/\s+/g, '_')}_EnergyPlus.idf`, idf, 'text/plain');
+              setNotice({ kind: 'ok', text: `EnergyPlus IDF export complete. Compatible with EnergyPlus 24.x / OpenStudio.` });
+            }}
+            title="Export full EnergyPlus IDF model (Geometry, Thermal Zone, HVAC Ideal Loads)"
+          >
+            IDF
+          </button>
           <button className="btn" onClick={() => downloadText('analysis.csv', toCsv(bundle()), 'text/csv')} title="Export Numerical Data">
             CSV
           </button>
@@ -1178,8 +1209,8 @@ export default function App() {
             <div className="hud-sep" />
             <div className="hud-metric">
               <span className="hud-label">ANNUAL EUI</span>
-              <span className="hud-val">{eui?.toFixed(0) ?? '—'} <span className="hud-unit">kWh/m²</span></span>
-              <span className="hud-sub">target: {design.euiTargetKwhM2Yr} {results.euiCompliant ? '• PASS' : `• +${results.euiTargetVariance}`}</span>
+              <span className="hud-val">{activeEui?.toFixed(0) ?? '—'} <span className="hud-unit">kWh/m²</span></span>
+              <span className="hud-sub">target: {design.euiTargetKwhM2Yr} {isEuiPass ? '• PASS' : `• +${euiVariance}`}</span>
             </div>
           </div>
 
@@ -1196,7 +1227,7 @@ export default function App() {
                 <span className="drawer-badge">{tab.toUpperCase()}</span>
               </div>
               <div className="drawer-handle-center">
-                <span>● {modelStatus} · ISO 13790 Analytical Model</span>
+                <span>● {modelStatus} · {simEngine === 'iso-dynamic' ? 'ISO 52016-1 Dynamic Thermal Sim' : 'ISO 13790 Analytical Model'}</span>
               </div>
               <div className="drawer-handle-right">
                 <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
@@ -1624,7 +1655,28 @@ export default function App() {
             {/* TAB 3: PERFORMANCE & SPECS */}
             {inspectorTab === 'specs' && (
               <div className="inspector-tab-pane">
-                <div className="inspector-sec-head">PERFORMANCE METRICS</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div className="inspector-sec-head" style={{ marginBottom: 0 }}>PERFORMANCE ENGINE</div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button
+                      className={`btn-status-pill ${simEngine === 'iso-dynamic' ? 'active' : ''}`}
+                      style={{ fontSize: 9.5, padding: '2px 7px', cursor: 'pointer', background: simEngine === 'iso-dynamic' ? 'rgba(234, 118, 0, 0.2)' : 'var(--bg-canvas)', color: simEngine === 'iso-dynamic' ? '#ea7600' : 'var(--text-muted)', border: '1px solid var(--rule)', borderRadius: 3 }}
+                      onClick={() => setSimEngine('iso-dynamic')}
+                      title="ISO 52016-1 Dynamic 12-Month Simulation with thermal inertia & COP"
+                    >
+                      ISO 52016-1
+                    </button>
+                    <button
+                      className={`btn-status-pill ${simEngine === 'instantaneous' ? 'active' : ''}`}
+                      style={{ fontSize: 9.5, padding: '2px 7px', cursor: 'pointer', background: simEngine === 'instantaneous' ? 'rgba(234, 118, 0, 0.2)' : 'var(--bg-canvas)', color: simEngine === 'instantaneous' ? '#ea7600' : 'var(--text-muted)', border: '1px solid var(--rule)', borderRadius: 3 }}
+                      onClick={() => setSimEngine('instantaneous')}
+                      title="Instantaneous heat balance snapshot"
+                    >
+                      Instantaneous
+                    </button>
+                  </div>
+                </div>
+
                 <div className="kpis">
                   <div className="kpi">
                     <span className="label">Operative Temp</span>
@@ -1645,9 +1697,9 @@ export default function App() {
                   </div>
 
                   <div className="kpi">
-                    <span className="label">Annual EUI</span>
-                    <span className="big">{eui?.toFixed(0) ?? '—'}<span style={{ fontSize: 12, color: 'var(--text-muted)' }}> kWh/m²</span></span>
-                    <span className="sub">target: {design.euiTargetKwhM2Yr} {results.euiCompliant ? '• PASS' : `• +${results.euiTargetVariance}`}</span>
+                    <span className="label">Annual EUI ({simEngine === 'iso-dynamic' ? 'ISO 52016' : 'Instant'})</span>
+                    <span className="big">{activeEui?.toFixed(0) ?? '—'}<span style={{ fontSize: 12, color: 'var(--text-muted)' }}> kWh/m²</span></span>
+                    <span className="sub">target: {design.euiTargetKwhM2Yr} {isEuiPass ? '• PASS' : `• +${euiVariance}`}</span>
                   </div>
                 </div>
 

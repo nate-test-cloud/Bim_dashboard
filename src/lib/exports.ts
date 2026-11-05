@@ -2,6 +2,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { BuildingModel, CalcResults, DesignInputs, EnvInputs, Scenario } from './types';
+import type { DynamicSimResults } from './dynamicSimulation';
 import { summarizeEnvelope } from './calculations';
 
 export interface ExportBundle {
@@ -10,6 +11,7 @@ export interface ExportBundle {
   env: EnvInputs;
   design: DesignInputs;
   results: CalcResults;
+  dynamicSim?: DynamicSimResults;
   scenarios: Scenario[];
   scenarioResults: { name: string; heatingKW: number; coolingKW: number; eui: number | null; solarKW: number }[];
 }
@@ -152,6 +154,10 @@ export function exportPdf(b: ExportBundle): void {
   doc.text('Performance results (instantaneous estimates at stated conditions)', 40, y);
   y += 8;
   const r = b.results;
+  const dyn = b.dynamicSim;
+  const displayedEui = dyn ? dyn.dynamicEuiKwhM2Yr : r.euiIllustrative;
+  const isEuiPass = displayedEui != null ? displayedEui <= b.design.euiTargetKwhM2Yr : null;
+
   autoTable(doc, {
     startY: y + 6,
     head: [['Metric', 'Value', 'Note']],
@@ -163,7 +169,9 @@ export function exportPdf(b: ExportBundle): void {
       ['Ventilation flow', `${r.ventilationW.toFixed(0)} W`, '0.33·ACH·V·ΔT'],
       ['Operative temp / PMV', `${r.operativeTempMaintainedC.toFixed(1)} °C`, `${r.comfortStatus} · PMV ${r.pmv} (${r.ppd}% PPD)`],
       ['Daylight potential', `${r.daylightPotentialPct}%`, 'indicator — NOT validated Daylight Autonomy'],
-      ['EUI (illustrative)', r.euiIllustrative != null ? `${r.euiIllustrative.toFixed(1)} kWh/m²/yr` : 'n/a', `target ${b.design.euiTargetKwhM2Yr} (${r.euiCompliant ? 'PASS' : 'FAIL'})`],
+      ['Annual Simulated EUI', displayedEui != null ? `${displayedEui.toFixed(1)} kWh/m²/yr` : 'n/a', `target ${b.design.euiTargetKwhM2Yr} (${isEuiPass ? 'PASS' : 'FAIL'})${dyn ? ' • ISO 52016-1' : ''}`],
+      ['HVAC Electrical Consumption', dyn ? `${Math.round(dyn.annualHeatingElectricKwh + dyn.annualCoolingElectricKwh).toLocaleString()} kWh/yr` : '—', dyn ? `COP_H ${dyn.seasonalCopHeating} · COP_C ${dyn.seasonalCopCooling}` : '—'],
+      ['Internal Lighting & Plugs', dyn ? `${Math.round(dyn.annualLightingKwh + dyn.annualEquipmentKwh).toLocaleString()} kWh/yr` : '—', dyn ? 'ASHRAE 90.1 standard loads' : '—'],
       ['Operational carbon (est.)', r.carbonKgPerYr != null ? `${r.carbonKgPerYr.toFixed(0)} kgCO₂/yr` : 'n/a', 'annual operational emissions'],
       ['Embodied carbon (A1-A3)', r.embodiedCarbonKg != null ? `${r.embodiedCarbonKg.toLocaleString()} kgCO₂e` : 'n/a', 'materials lifecycle baseline'],
       ['50-Yr Whole Life Carbon', r.totalLifeCycleCarbonKg != null ? `${Math.round(r.totalLifeCycleCarbonKg / 1000).toLocaleString()} tCO₂e` : 'n/a', 'embodied + 50yr operational'],
